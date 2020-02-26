@@ -957,10 +957,8 @@ struct CutMatching {
                      << endl;
                 return true;
             }
-            
-
         }
-        
+
 
 
     return false;
@@ -1808,6 +1806,78 @@ double standalone_conductance(GraphContext& gc, set<Node> cut) {
 }
 
 
+struct cm_result {
+    set<Node> best_cut;
+    set<Node> last_cut;
+    double best_conductance;
+    double last_conductance;
+    bool reached_H_target;
+    bool relatively_balanced;
+};
+
+void run_cut_matching(GraphContext& gc, Configuration& config, cm_result& cm_res) {
+
+    assert(connected(gc.g));
+    assert(gc.nodes.size() > 2);
+
+    Node temp_node;
+    Edge temp_edge;
+
+    bool added_node = false;
+    if (gc.nodes.size() % 2 != 0) {
+        added_node = true;
+        temp_node = gc.g.addNode();
+        temp_edge = gc.g.addEdge(gc.nodes[gc.nodes.size() - 2], temp_node);
+        gc.nodes.push_back(temp_node);
+        gc.num_edges++;
+    }
+
+    cout << "init cut-matching" << endl;
+    
+    default_random_engine random_engine = config.seed_randomness
+                    ? default_random_engine(config.seed)
+                    : default_random_engine(random_device()());
+    CutMatching cm(gc, config, random_engine);
+    cout << "Start cut-matching" << endl;
+    cm.run();
+    cout << "Finish cut-matching" << endl;
+    assert(!cm.sub_past_rounds.empty());
+    auto& best_round = *min_element(cm.sub_past_rounds.begin(), cm.sub_past_rounds.end(), [](auto &a, auto &b) {
+        return a->g_conductance < b->g_conductance;
+    });
+    //Q: hack
+    auto& last_round = *min_element(cm.sub_past_rounds.end() - 1, cm.sub_past_rounds.end(), [](auto &a, auto &b) {
+        return a->g_conductance == b->g_conductance;
+    });
+    
+    if (added_node) {
+        (*(best_round->cut)).erase(temp_node);
+        (*(last_round->cut)).erase(temp_node);
+        gc.g.erase(temp_edge);
+        gc.g.erase(temp_node);
+        gc.nodes.pop_back();
+        gc.num_edges--;
+    }
+    
+    cout << "The best with highest expansion was found on round" << best_round->index << endl;
+    cout << "Best cut sparsity: " << endl;
+    auto &best_cut = best_round->cut;
+    CutStats<G>(gc.g, gc.nodes.size(), *best_cut).print();
+
+    cm_result cms;
+
+    //cut = cm.reached_H_target == true ? cut = (*(best_round->cut)) : (*(last_round->cut));
+
+    cm_res.best_cut = *best_round->cut;
+    cm_res.last_cut = *last_round->cut;
+    cm_res.best_conductance = best_round->g_conductance;
+    cm_res.last_conductance = last_round->g_conductance;
+    cm_res.reached_H_target = cm.reached_H_target;
+    cm_res.relatively_balanced = best_round->relatively_balanced;
+
+    return;
+}
+
 vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node, Node> map_to_original_graph, vector<map<Node, Node>> node_maps_to_original_graph) {
 
     int x = 0;
@@ -1855,90 +1925,22 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
  
     //cout << "con-check, n: " << gc.nodes.size() << " e: " << gc.num_edges << endl;
 
-    Node temp_node;
-    Edge temp_edge;
-    bool added_node = false;
-    if (gc.nodes.size() % 2 != 0) {
-        added_node = true;
-        temp_node = gc.g.addNode();
-        temp_edge = gc.g.addEdge(gc.nodes[gc.nodes.size() - 2], temp_node);
-        gc.nodes.push_back(temp_node);
-        gc.num_edges++;
-    }
-
-
-    //for (EdgeIt e(gc.g); e != INVALID; ++e) {
-    //    assert (gc.g.u(e) != gc.g.v(e));
-    //
-    
-
-    cout << "init cut-matching" << endl;
-    
-    default_random_engine random_engine = config.seed_randomness
-                    ? default_random_engine(config.seed)
-                    : default_random_engine(random_device()());
-    CutMatching cm(gc, config, random_engine);
-    cout << "Start cut-matching" << endl;
-    cm.run();
-    cout << "Finish cut-matching" << endl;
-    assert(!cm.sub_past_rounds.empty());
-    auto& best_round = *min_element(cm.sub_past_rounds.begin(), cm.sub_past_rounds.end(), [](auto &a, auto &b) {
-        return a->g_conductance < b->g_conductance;
-    });
-    //Q: hack
-    auto& last_round = *min_element(cm.sub_past_rounds.end() - 1, cm.sub_past_rounds.end(), [](auto &a, auto &b) {
-        return a->g_conductance == b->g_conductance;
-    });
-    
-    if (added_node) {
-        (*(best_round->cut)).erase(temp_node);
-        (*(last_round->cut)).erase(temp_node);
-        gc.g.erase(temp_edge);
-        gc.g.erase(temp_node);
-        gc.nodes.pop_back();
-        gc.num_edges--;
-    }
-    
-    cout << "The best with highest expansion was found on round" << best_round->index << endl;
-    cout << "Best cut sparsity: " << endl;
-    auto &best_cut = best_round->cut;
-    CutStats<G>(gc.g, gc.nodes.size(), *best_cut).print();
-
-    GraphContext sg_1;
-    GraphContext sg_2;
-    map<Node, Node> nm_1 =  graph_from_cut(gc, sg_1, *best_cut, map_to_original_graph, false); 
-    map<Node, Node> nm_2 =  graph_from_cut(gc, sg_2, *best_cut, map_to_original_graph, true);
-    /*
-    if (!connected(sg_1.g) || !connected(sg_2.g)) {
-    //No guarantee, continue
-        vector<set<Node>> labels = find_connected_components(sg_1);
-
-        //cout << "local flow: one component not connected" << endl;
-        vector<map<Node, Node>> empty_map;
-        vector<map<Node, Node>> decomp_map = decomp(sg_1, config, nm_1, empty_map);
-        node_maps_to_original_graph.insert(node_maps_to_original_graph.end(), decomp_map.begin(), decomp_map.end());
-        vector<map<Node, Node>> empty_map_2;
-        vector<map<Node, Node>> decomp_map_2 = decomp(sg_2, config, nm_2, empty_map_2);
-        node_maps_to_original_graph.insert(node_maps_to_original_graph.end(), decomp_map_2.begin(), decomp_map_2.end());
-        return node_maps_to_original_graph; //decomp(sg_2, dg, config, nm_2, cuts, node_maps_to_original_graph);
-    }
-    */
-
-
+    cm_result cm_res;
+    run_cut_matching(gc, config, cm_res);
     set<Node> cut;
-    cut = cm.reached_H_target == true ? cut = (*(best_round->cut)) : (*(last_round->cut));
-
-
+    cm_res.reached_H_target == true ? cut = cm_res.best_cut : cut = cm_res.last_cut;
 
     //WARNING - cut is small size now, at least Trimming should not work.
     //
-    if (cut.size() == 0 || cut.size() == gc.nodes.size() || (best_round->g_conductance >= config.G_phi_target && cm.reached_H_target)) {
+    
+    if (cut.size() == 0 || cut.size() == gc.nodes.size() || (cm_res.best_conductance >= config.G_phi_target && cm_res.reached_H_target)) {
         cout << "CASE1 NO Goodenough cut (timeout), G certified expander." << endl;
         node_maps_to_original_graph.push_back(map_to_original_graph);
     }
 
+
     //break early due to balanced and good cut
-    else if (best_round->g_conductance < config.G_phi_target && best_round->relatively_balanced) {
+    else if (cm_res.best_conductance < config.G_phi_target && cm_res.relatively_balanced) {
         assert (cut.size() > 0 != gc.nodes.size());
         cout << "CASE2 Goodenough balanced cut" << endl;
         GraphContext A;
@@ -1963,7 +1965,7 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
     }
 
     //check best cut found so far
-    else if (!(best_round->relatively_balanced) && best_round->g_conductance < config.G_phi_target) {  
+    else if (!(cm_res.relatively_balanced) && cm_res.best_conductance < config.G_phi_target) {  
         //assert (cm.reached_H_target);
         //ListDigraph dg_;
         //digraph_from_graph(gc.g, dg_);
@@ -2018,6 +2020,7 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
 
 
 void expander_test(GraphContext& gc, Configuration conf, double phi) {
+    /*
     set<Node> cut;
     vector<int> indices;
     for (int i = 0; i < gc.nodes.size(); i++)
@@ -2026,14 +2029,72 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
     indices.erase(indices.begin(), indices.begin() + 20);
     for (auto& i : indices) {
         cut.insert(gc.g.nodeFromId(i));
-    }
-    set<Node> new_cut = trimming(gc, conf, cut, phi);
+    }*/
 
+    double test_phi;
+    cm_result cm_res;
+    for (test_phi = 0.50001; test_phi > 0; test_phi = test_phi - 0.05) { 
+
+        //conf.G_phi_target = 0.00001;
+        run_cut_matching(gc, conf, cm_res);
+        //if (cm_res.best_cut.size() == 0) {
+        //    break;
+        //}
+        break;
+    }
+
+
+
+    cm_result cm_dummy_test_cond;
+    conf.G_phi_target = cm_res.best_conductance/2;
+    run_cut_matching(gc, conf, cm_dummy_test_cond);
+
+    assert(cm_dummy_test_cond.reached_H_target);
+
+
+
+    set<Node> cut;
+    vector<int> indices;
+    for (int i = 0; i < gc.nodes.size(); i++)
+        indices.push_back(i);
+    shuffle(indices.begin(), indices.end(), default_random_engine(0));
+    indices.erase(indices.begin(), indices.begin() + 10);
+    for (auto& i : indices) {
+        cut.insert(gc.g.nodeFromId(i));
+    }
+
+    //std::set_difference(gc.nodes.begin(), gc.nodes.end(), cm_res.best_cut.begin(), cm_res.best_cut.end(),
+     //       std::inserter(large_side_A, large_side_A.end()));
+
+    //assert (large_side_A.size() > 0 && large_side_A.size() < gc.nodes.size());
+    //
+    GraphContext induced_sg_no_trim;
+    graph_from_cut(gc, induced_sg_no_trim, cut);
+
+    cm_result cm_res_no_trim;
+    run_cut_matching(induced_sg_no_trim, conf, cm_res_no_trim);
+
+    cout << "CM on non-trimmed subgraph ^^" << endl;
+    set<Node> trim_cut = slow_trimming(gc, conf, cut, cm_res.best_conductance); //large_side_A, phi);
+    trim_cut = slow_trimming(gc, conf, trim_cut, cm_res.best_conductance);
+
+    cout << "CM on trimmed subgraph ^^" << endl;
+
+    GraphContext induced_sg;
+    graph_from_cut(gc, induced_sg, trim_cut);
+
+    cm_result cm_res_after_trimming;
+
+    run_cut_matching(induced_sg, conf, cm_res_after_trimming);
+ 
+    assert("Trimming guarantee failed" && (cm_res_after_trimming.best_cut.size() == 0 || cm_res_after_trimming.best_conductance > conf.G_phi_target/6));
+    /*
     cout << "EXPANDER: local flow: old cut size: " << cut.size() << " new cut size: " << new_cut.size() << endl;
 
     new_cut = slow_trimming(gc, conf, cut, phi);
 
     cout << "EXPANDER EXACT: local flow: old cut size: " << cut.size() << " new cut size: " << new_cut.size() << endl;
+    */
     return;
 }
 
@@ -2069,6 +2130,7 @@ int main(int argc, char **argv) {
     //main
     expander_test(gc, config, config.G_phi_target);
 
+    return 0;
     vector<map<Node, Node>> cut_maps = decomp(gc, config, map_to_original_graph, node_maps_to_original_graph);
 
     cout << "Done decomp" << endl;
