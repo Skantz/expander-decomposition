@@ -1489,6 +1489,7 @@ set<Node> slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, dou
     if (!bfs.reached(t)) {
         cout << "local flow: WARNING - A not connected" << endl;
         //assert (false && "require A connected for trimming");
+        //assert(!connected(sg));
     }
 
     cut.clear();
@@ -1728,14 +1729,14 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
             //assert (false);
         }
 
-        cout << "Choosing node: " << g.g.id(y) << endl;
+        //cout << "Choosing node: " << g.g.id(y) << endl;
         bfs.addSource(y);
         //bfs.run();
         assert (y != INVALID);
         assert (visited_nodes[y] == false);
 
         if (bfs.emptyQueue()) {
-            cout << "Unreachable ?" << endl;
+            //cout << "Unreachable ?" << endl;
             labels[cc].insert(y);
             visited_nodes[y] = true;
             n_visited++;
@@ -1764,6 +1765,22 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
     assert (cc <= g.nodes.size());
     assert (tot == g.nodes.size());
     return labels;
+}
+
+void connected_bipartition_from_cut(GraphContext gc_orig, set<Node> A) {
+
+    set<Node> R;
+
+    std::set_difference(gc_orig.nodes.begin(), gc_orig.nodes.end(), A.begin(), A.end(),
+            std::inserter(R, R.end()));
+
+    GraphContext A_sg;
+    GraphContext R_sg;
+
+    vector<set<Node>> components = find_connected_components(gc_orig);
+        
+    //graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut)
+    return;
 }
 
 
@@ -1812,7 +1829,8 @@ struct cm_result {
     double best_conductance;
     double last_conductance;
     bool reached_H_target;
-    bool relatively_balanced;
+    bool best_relatively_balanced;
+    bool last_relatively_balanced;
 };
 
 void run_cut_matching(GraphContext& gc, Configuration& config, cm_result& cm_res) {
@@ -1873,7 +1891,8 @@ void run_cut_matching(GraphContext& gc, Configuration& config, cm_result& cm_res
     cm_res.best_conductance = best_round->g_conductance;
     cm_res.last_conductance = last_round->g_conductance;
     cm_res.reached_H_target = cm.reached_H_target;
-    cm_res.relatively_balanced = best_round->relatively_balanced;
+    cm_res.best_relatively_balanced = best_round->relatively_balanced;
+    cm_res.last_relatively_balanced = last_round->relatively_balanced;
 
     return;
 }
@@ -1928,8 +1947,10 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
     cm_result cm_res;
     run_cut_matching(gc, config, cm_res);
     set<Node> cut;
-    cm_res.reached_H_target == true ? cut = cm_res.best_cut : cut = cm_res.last_cut;
+    //(cm_res.reached_H_target == true && cm_res.best_relatively_balanced)? cut = cm_res.best_cut : cut = cm_res.last_cut;
 
+    cut = cm_res.best_cut;
+    !(cm_res.reached_H_target) && cm_res.best_relatively_balanced ? cut = cm_res.last_cut : cut = cm_res.best_cut;
     //WARNING - cut is small size now, at least Trimming should not work.
     //
     
@@ -1940,7 +1961,7 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
 
 
     //break early due to balanced and good cut
-    else if (cm_res.best_conductance < config.G_phi_target && cm_res.relatively_balanced) {
+    else if (cm_res.best_conductance < config.G_phi_target && cm_res.best_relatively_balanced) {
         assert (cut.size() > 0 != gc.nodes.size());
         cout << "CASE2 Goodenough balanced cut" << endl;
         GraphContext A;
@@ -1965,7 +1986,7 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
     }
 
     //check best cut found so far
-    else if (!(cm_res.relatively_balanced) && cm_res.best_conductance < config.G_phi_target) {  
+    else if (!(cm_res.best_relatively_balanced) && cm_res.best_conductance < config.G_phi_target) {  
         //assert (cm.reached_H_target);
         //ListDigraph dg_;
         //digraph_from_graph(gc.g, dg_);
@@ -2046,7 +2067,7 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
 
 
     cm_result cm_dummy_test_cond;
-    conf.G_phi_target = cm_res.best_conductance/2;
+    conf.G_phi_target = cm_res.best_conductance * 0.8;
     run_cut_matching(gc, conf, cm_dummy_test_cond);
 
     assert(cm_dummy_test_cond.reached_H_target);
@@ -2058,36 +2079,51 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
     for (int i = 0; i < gc.nodes.size(); i++)
         indices.push_back(i);
     shuffle(indices.begin(), indices.end(), default_random_engine(0));
-    indices.erase(indices.begin(), indices.begin() + 10);
+    indices.erase(indices.begin(), indices.begin() + conf.h_ratio * indices.size());
     for (auto& i : indices) {
         cut.insert(gc.g.nodeFromId(i));
     }
+
+    GraphContext gc_nodes_removed;
+    map<Node, Node> dummy_map;
+    dummy_map = graph_from_cut(gc, gc_nodes_removed, cut, dummy_map);
+    if (!(connected(gc_nodes_removed.g))) {
+        vector<set<Node>> labels = find_connected_components(gc_nodes_removed);
+        int node_cnt = 0;
+        for (auto& sg_cut : labels) {
+            cout << "decomp on component: n: " << sg_cut.size() << endl;
+            /*
+            for (auto& n : sg_cut)
+                cout << gc.g.id(map_to_original_graph[n]) << " ";
+            */
+            //GraphContext sg;
+            //graph_from_cut(gc, sg, sg_cut, map_to_original_graph);
 
     //std::set_difference(gc.nodes.begin(), gc.nodes.end(), cm_res.best_cut.begin(), cm_res.best_cut.end(),
      //       std::inserter(large_side_A, large_side_A.end()));
 
     //assert (large_side_A.size() > 0 && large_side_A.size() < gc.nodes.size());
     //
-    GraphContext induced_sg_no_trim;
-    graph_from_cut(gc, induced_sg_no_trim, cut);
+            GraphContext induced_sg;
+            graph_from_cut(gc_nodes_removed, induced_sg, sg_cut);
 
-    cm_result cm_res_no_trim;
-    run_cut_matching(induced_sg_no_trim, conf, cm_res_no_trim);
+            cm_result cm_res_no_trim;
+            run_cut_matching(induced_sg, conf, cm_res_no_trim);
 
-    cout << "CM on non-trimmed subgraph ^^" << endl;
-    set<Node> trim_cut = slow_trimming(gc, conf, cut, cm_res.best_conductance); //large_side_A, phi);
-    trim_cut = slow_trimming(gc, conf, trim_cut, cm_res.best_conductance);
+            cout << "CM on non-trimmed subgraph ^^" << endl;
+            set<Node> trim_cut = slow_trimming(gc, conf, sg_cut, cm_res.best_conductance); //large_side_A, phi);
+            trim_cut = slow_trimming(gc, conf, trim_cut, cm_res.best_conductance);
 
-    cout << "CM on trimmed subgraph ^^" << endl;
+            assert (trim_cut.size() > 0);
+            GraphContext sg_trimmed;
+            graph_from_cut(gc, sg_trimmed, trim_cut);
 
-    GraphContext induced_sg;
-    graph_from_cut(gc, induced_sg, trim_cut);
-
-    cm_result cm_res_after_trimming;
-
-    run_cut_matching(induced_sg, conf, cm_res_after_trimming);
- 
-    assert("Trimming guarantee failed" && (cm_res_after_trimming.best_cut.size() == 0 || cm_res_after_trimming.best_conductance > conf.G_phi_target/6));
+            cm_result cm_res_after_trimming;
+            run_cut_matching(sg_trimmed, conf, cm_res_after_trimming);
+            cout << "CM on trimmed subgraph ^^" << endl;
+            assert("Trimming guarantee failed" && (cm_res_after_trimming.best_cut.size() == 0 || cm_res_after_trimming.best_conductance > conf.G_phi_target/6));
+        }
+    }
     /*
     cout << "EXPANDER: local flow: old cut size: " << cut.size() << " new cut size: " << new_cut.size() << endl;
 
@@ -2128,9 +2164,9 @@ int main(int argc, char **argv) {
     }
 
     //main
-    expander_test(gc, config, config.G_phi_target);
+    //expander_test(gc, config, config.G_phi_target);
 
-    return 0;
+    //return 0;
     vector<map<Node, Node>> cut_maps = decomp(gc, config, map_to_original_graph, node_maps_to_original_graph);
 
     cout << "Done decomp" << endl;
@@ -2154,7 +2190,7 @@ int main(int argc, char **argv) {
             all_nodes.push_back(gc.g.id(c.second));
             cuts_node_vector[cuts_node_vector.size()-1].push_back(c.second);
         }
-        cout << endl;
+
     } 
 
     assert (gc.nodes.size() == all_nodes.size());
@@ -2174,7 +2210,7 @@ int main(int argc, char **argv) {
                 }
             }
         }
-        cout << "ei: " << edges_inside_cluster << " all " << all_edges << endl;
+        cout << edges_inside_cluster << " ; " << all_edges << endl;
         node_ratio_edges_inside.push_back((double)edges_inside_cluster/(double)all_edges);
     }
 
