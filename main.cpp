@@ -1,4 +1,4 @@
-// Authored by Ludvig Janiuk 2019 as part of individual project at KTH.
+// Bisection part authored by Ludvig Janiuk 2019 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "cert-msc32-c"
 #pragma ide diagnostic ignored "cppcoreguidelines-slicing"
@@ -24,17 +24,7 @@
 #include "cxxopts.hpp"
 #include "preliminaries.h"
 
-// TODO now
-// Clean the code much more, to be able to do the stopping and edge version
-// Basically get unnecessary stuff out of the algo
-
-// TODO OK how do we do edge version...
-// Whats the plan for hte edge version? Lets describe it in text
-// 1. At the start of the algo, we need to make the subdivision graph.
-// 2. And we need the set of subivided vertices. we could store it in the context to start with.
-// 3. Then cut player needs to do the cut on those instead, can this be cone in an opaque way?
-// 4. The matching player has to push flow differently and compile the cut differently. This will be a big difference.
-
+#include <omp.h>
 
 using namespace lemon;
 using namespace std;
@@ -1911,7 +1901,9 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
 
     if (!(connected(gc.g))) {
         vector<set<Node>> labels = find_connected_components(gc);
-        int node_cnt = 0; 
+        int node_cnt = 0;
+        //#pragma omp parallell
+        #pragma omp parallell for schedule(dynamic, 1)
         for (auto& sg_cut : labels) {
             cout << "decomp on component: n: " << sg_cut.size() << endl;
             /*
@@ -1928,6 +1920,7 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
             node_maps_to_original_graph.insert(node_maps_to_original_graph.end(), decomp_map.begin(), decomp_map.end());
             node_cnt = node_cnt + sg.nodes.size();
         }
+        #pragma omp taskwait
         return node_maps_to_original_graph;
     }
 
