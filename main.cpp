@@ -2002,8 +2002,6 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
         cout << "local flow: max flow conductance: " << endl;
         standalone_conductance(gc, cut);
 
-
-
         cout << "After local flow (real), cut is reduced to n nodes: " << real_trim_cut.size() << endl;
         cout << "local flow: real cut has conductance: " << endl;
         standalone_conductance(gc, real_trim_cut);
@@ -2057,15 +2055,11 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
         break;
     }
 
-
-
     cm_result cm_dummy_test_cond;
     conf.G_phi_target = cm_res.best_conductance * 0.8;
     run_cut_matching(gc, conf, cm_dummy_test_cond);
 
     assert(cm_dummy_test_cond.reached_H_target);
-
-
 
     set<Node> cut;
     vector<int> indices;
