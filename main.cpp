@@ -1767,7 +1767,7 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
     return labels;
 }
 
-set<Node> connected_component_from_cut(GraphContext gc_orig, set<Node> A) {
+set<Node> connected_component_from_cut(GraphContext& gc_orig, set<Node> A) {
 
     set<Node> R;
 
@@ -1789,30 +1789,28 @@ set<Node> connected_component_from_cut(GraphContext gc_orig, set<Node> A) {
     //}
 
     while (components_A.size() > 1 || components_R.size() > 1) {
-        cout << "components not connected: n components in A: " << components_A.size() << " n in R: " << components_R.size();
+        cout << "components not connected: n components in A: " << components_A.size() << " n in R: " << components_R.size() << endl;
 
         if (components_A.size() > 1) {
-            for (auto c = components_A.begin() ; c != components_A.end() - 1; c++) {
-                if (c == components_A.begin())
-                    continue;  
+            for (auto c = components_A.begin() + 1; c != components_A.end(); c++) {
+
                 R.insert((*c).begin(), (*c).end());
-                A = *components_A.begin();
             }
+            A = *components_A.begin();
         }
         else if (components_R.size() > 1) {
-            for (auto c = components_R.begin() ; c != components_R.end() - 1; c++) {
-                if (c == components_R.begin())
-                    continue;
+            for (auto c = components_R.begin() + 1; c != components_R.end(); c++) {
                 A.insert((*c).begin(), (*c).end());
-                R = *components_R.begin();
             }
+            R = *components_R.begin();
         }
+        assert (A.size() + R.size() == gc_orig.nodes.size());
         GraphContext A_sg_, R_sg_;
         graph_from_cut(gc_orig, A_sg_, A);
         graph_from_cut(gc_orig, R_sg_, R);
-
-        components_A = find_connected_components(A_sg);
-        components_R = find_connected_components(R_sg);
+        //Q: does not work because indices are messed up when creating subgraph
+        components_A = find_connected_components(A_sg_);
+        components_R = find_connected_components(R_sg_);
     }
     assert(A.size() + R.size() == gc_orig.nodes.size());
     //graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut)
@@ -2115,8 +2113,10 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
         cut.insert(gc.g.nodeFromId(i));
     }
 
-    GraphContext gc_nodes_removed;
+    cut = connected_component_from_cut(gc, cut); 
     map<Node, Node> dummy_map;
+
+    GraphContext gc_nodes_removed;
     dummy_map = graph_from_cut(gc, gc_nodes_removed, cut, dummy_map);
 
     cm_result cm_res_no_trim;
