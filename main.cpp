@@ -1712,6 +1712,7 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
     Node source;
     Node y;
 
+    //Q:
     int test_check = 0;
     for (NodeIt n(g.g); n != INVALID; ++n)
         test_check = test_check + 1;
@@ -1721,12 +1722,12 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
 
         for(NodeIt n(g.g); n != INVALID; ++n) {
             //cout << "Checking node n: " << g.g.id(n) << endl;
+            //Start with some unvisited node
             if (visited_nodes[n] == false) {
                 y = n;
-
                 break;
             }
-            //assert (false);
+            goto return_labels;
         }
 
         //cout << "Choosing node: " << g.g.id(y) << endl;
@@ -1734,7 +1735,7 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
         //bfs.run();
         assert (y != INVALID);
         assert (visited_nodes[y] == false);
-
+        //visited_nodes[y] = true;
         if (bfs.emptyQueue()) {
             //cout << "Unreachable ?" << endl;
             labels[cc].insert(y);
@@ -1745,6 +1746,9 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
         }
         assert (y != INVALID);
 
+        //starting node y too
+        n_visited++;
+        labels[cc].insert(y);
         while (!bfs.emptyQueue() && y != INVALID) {
             if (!visited_nodes[y]) {
                 labels[cc].insert(y);
@@ -1757,11 +1761,12 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
         assert (labels[cc].size() > 0);
         cc++;
     }
+    return_labels:
     int tot = 0;
     for (auto &l : labels)
         tot = tot + l.size();
-    cout << "N visited " << n_visited << " g node size " << g.nodes.size() << " cc:  " << cc << endl;
-    assert (n_visited == g.nodes.size());
+    cout << "N visited " << n_visited << "actual: " << tot <<  " g node size " << g.nodes.size() << " cc:  " << cc << endl;
+    //assert (n_visited == g.nodes.size());
     assert (cc <= g.nodes.size());
     assert (tot == g.nodes.size());
     return labels;
@@ -1773,13 +1778,20 @@ set<Node> connected_component_from_cut(GraphContext& gc_orig, set<Node> A) {
 
     std::set_difference(gc_orig.nodes.begin(), gc_orig.nodes.end(), A.begin(), A.end(),
             std::inserter(R, R.end()));
+    assert(connected(gc_orig.g));
+    //Q: remove
+    vector<set<Node>> test_cc = find_connected_components(gc_orig);
+    assert(test_cc.size() == 1);
     //Q: just for now?
     assert(A.size() >= R.size());
     GraphContext A_sg;
     GraphContext R_sg;
 
-    graph_from_cut(gc_orig, A_sg, A);
-    graph_from_cut(gc_orig, R_sg, R);
+    map<Node, Node> gc_to_gc;
+    for (auto& n: gc_orig.nodes)
+        gc_to_gc[n] = n;
+    map<Node, Node> A_to_orig = graph_from_cut(gc_orig, A_sg, A, gc_to_gc);
+    map<Node, Node> R_to_orig = graph_from_cut(gc_orig, R_sg, R, gc_to_gc);
 
     vector<set<Node>> components_A = find_connected_components(A_sg);
     vector<set<Node>> components_R = find_connected_components(R_sg);
@@ -1787,30 +1799,39 @@ set<Node> connected_component_from_cut(GraphContext& gc_orig, set<Node> A) {
     //bool longest(const std::vector<int>& lhs, const std::vector<int>& rhs) {
     //    return lhs.size() < rhs.size();
     //}
-
+    cout << "orig graph: n: " << gc_orig.nodes.size() << endl;
     while (components_A.size() > 1 || components_R.size() > 1) {
         cout << "components not connected: n components in A: " << components_A.size() << " n in R: " << components_R.size() << endl;
 
         if (components_A.size() > 1) {
             for (auto c = components_A.begin() + 1; c != components_A.end(); c++) {
-
-                R.insert((*c).begin(), (*c).end());
+                //R.insert((*c).begin(), (*c).end());
+                for (auto& n: *c)
+                    R.insert(A_to_orig[n]);
             }
-            A = *components_A.begin();
+            A.clear();
+            for (auto& n: *components_A.begin())
+                A.insert(A_to_orig[n]);
+            //A = *components_A.begin();
         }
         else if (components_R.size() > 1) {
             for (auto c = components_R.begin() + 1; c != components_R.end(); c++) {
-                A.insert((*c).begin(), (*c).end());
+                for (auto& n: *c)
+                    A.insert(R_to_orig[n]);
             }
-            R = *components_R.begin();
+            R.clear();
+            for (auto& n: *components_R.begin())
+                R.insert(R_to_orig[n]);
         }
         assert (A.size() + R.size() == gc_orig.nodes.size());
         GraphContext A_sg_, R_sg_;
-        graph_from_cut(gc_orig, A_sg_, A);
-        graph_from_cut(gc_orig, R_sg_, R);
+        A_to_orig = graph_from_cut(gc_orig, A_sg_, A, gc_to_gc);
+        R_to_orig = graph_from_cut(gc_orig, R_sg_, R, gc_to_gc);
+        assert(A_sg_.nodes.size() + R_sg_.nodes.size() == gc_orig.nodes.size());
         //Q: does not work because indices are messed up when creating subgraph
         components_A = find_connected_components(A_sg_);
         components_R = find_connected_components(R_sg_);
+        assert(components_A.size() == 1 || components_R.size() == 1);
     }
     assert(A.size() + R.size() == gc_orig.nodes.size());
     //graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut)
