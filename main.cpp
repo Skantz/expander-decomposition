@@ -69,6 +69,8 @@ using CutMap = NodeMap<bool>;
 
 
 const double MICROSECS = 1000000.0;
+const double PHI_UNREACHABLE = 0.00000001;
+const double PHI_ACCEPTANCE_TRIMMING = 0.166;
 const auto& now = high_resolution_clock::now;
 double duration_sec(const high_resolution_clock::time_point& start, high_resolution_clock::time_point& stop) {
     return duration_cast<microseconds>(stop - start).count() / MICROSECS;
@@ -1727,7 +1729,8 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
                 y = n;
                 break;
             }
-            goto return_labels;
+            //continue;
+            //goto return_labels;
         }
 
         //cout << "Choosing node: " << g.g.id(y) << endl;
@@ -1736,6 +1739,7 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
         assert (y != INVALID);
         assert (visited_nodes[y] == false);
         //visited_nodes[y] = true;
+        /*
         if (bfs.emptyQueue()) {
             //cout << "Unreachable ?" << endl;
             labels[cc].insert(y);
@@ -1744,11 +1748,14 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
             cc++;
             continue;
         }
+        */
         assert (y != INVALID);
 
         //starting node y too
         n_visited++;
         labels[cc].insert(y);
+        visited_nodes[y] = true;
+        Node s_saved = y;
         while (!bfs.emptyQueue() && y != INVALID) {
             if (!visited_nodes[y]) {
                 labels[cc].insert(y);
@@ -1758,6 +1765,13 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
             y = bfs.processNextNode();
 
         }
+        assert(y != INVALID);
+        if (!visited_nodes[y]) {
+            labels[cc].insert(y);
+            visited_nodes[y] = true;
+            n_visited++;
+        }
+        assert (labels[cc].count(s_saved) == 1);
         assert (labels[cc].size() > 0);
         cc++;
     }
@@ -1769,6 +1783,7 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
     //assert (n_visited == g.nodes.size());
     assert (cc <= g.nodes.size());
     assert (tot == g.nodes.size());
+    cout << "n components: " << cc << " should equal " << labels.size() << endl;
     return labels;
 }
 
@@ -1783,7 +1798,7 @@ set<Node> connected_component_from_cut(GraphContext& gc_orig, set<Node> A) {
     vector<set<Node>> test_cc = find_connected_components(gc_orig);
     assert(test_cc.size() == 1);
     //Q: just for now?
-    assert(A.size() >= R.size());
+    //assert(A.size() >= R.size());
     GraphContext A_sg;
     GraphContext R_sg;
 
@@ -1953,6 +1968,31 @@ void run_cut_matching(GraphContext& gc, Configuration& config, cm_result& cm_res
     return;
 }
 
+bool test_subgraph_expansion(GraphContext& gc, Configuration config, set<Node> cut, double acceptance_ratio) {
+    cm_result cm_g;
+    cm_result cm_sg;
+
+    // Practically unreachable
+    double saved_phi = config.G_phi_target;
+    config.G_phi_target = PHI_UNREACHABLE;
+    run_cut_matching(gc, config, cm_g);
+
+    GraphContext sg_dummy;
+    graph_from_cut(gc, sg_dummy, cut);
+    if (!connected(sg_dummy.g)) {
+        cut = connected_component_from_cut(gc, cut);
+    }
+    GraphContext sg;
+    graph_from_cut(gc, sg, cut);
+
+    config.G_phi_target = saved_phi * PHI_ACCEPTANCE_TRIMMING; 
+    run_cut_matching(gc, config, cm_sg);
+
+    config.G_phi_target = saved_phi;
+    cout << "g expansion: " << cm_g.best_conductance << " sg_expansion: " << cm_sg.best_conductance << endl;
+    return cm_sg.best_conductance >= cm_g.best_conductance * acceptance_ratio;
+}
+
 vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node, Node> map_to_original_graph, vector<map<Node, Node>> node_maps_to_original_graph) {
 
     int x = 0;
@@ -1964,7 +2004,7 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
         node_maps_to_original_graph.push_back(map_to_original_graph);
         return node_maps_to_original_graph;
     }
-
+    
     if (!(connected(gc.g))) {
         vector<set<Node>> labels = find_connected_components(gc);
         int node_cnt = 0; 
@@ -2009,12 +2049,14 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
     !(cm_res.reached_H_target) && cm_res.best_relatively_balanced ? cut = cm_res.last_cut : cut = cm_res.best_cut;
     //WARNING - cut is small size now, at least Trimming should not work.
     //
-    
+
+    //Q: should be an improvement. But this will affect balance. re-calculate?
+    cut = connected_component_from_cut(gc, cut);
+
     if (cut.size() == 0 || cut.size() == gc.nodes.size() || (cm_res.best_conductance >= config.G_phi_target && cm_res.reached_H_target)) {
         cout << "CASE1 NO Goodenough cut (timeout), G certified expander." << endl;
         node_maps_to_original_graph.push_back(map_to_original_graph);
     }
-
 
     //break early due to balanced and good cut
     else if (cm_res.best_conductance < config.G_phi_target && cm_res.best_relatively_balanced) {
@@ -2065,10 +2107,10 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
         cout << "local flow: max flow conductance: " << endl;
         standalone_conductance(gc, cut);
 
-
-
         cout << "After local flow (real), cut is reduced to n nodes: " << real_trim_cut.size() << endl;
+
         cout << "local flow: real cut has conductance: " << endl;
+        //assert( )
         standalone_conductance(gc, real_trim_cut);
         cut = real_trim_cut;
         assert (cut.size() != 0);
@@ -2076,6 +2118,8 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
         GraphContext A;
         map<Node, Node> R_map = graph_from_cut(gc, V_over_A, cut, map_to_original_graph, true);
         map<Node, Node> A_map = graph_from_cut(gc, A, cut, map_to_original_graph, false);
+        bool sg_is_expander = test_subgraph_expansion(gc, config, real_trim_cut, PHI_ACCEPTANCE_TRIMMING);
+        assert(sg_is_expander);
         //Q: should hold? Why is this off by one?
         assert (A.nodes.size() + V_over_A.nodes.size() == gc.nodes.size());
         assert (V_over_A.nodes.size() > 0);
@@ -2110,10 +2154,8 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
 
     double test_phi;
     cm_result cm_res;
-    for (test_phi = 0.50001; test_phi > 0; test_phi = test_phi - 0.05) { 
-        run_cut_matching(gc, conf, cm_res);
-        break;
-    }
+    
+    run_cut_matching(gc, conf, cm_res);
 
     cm_result cm_dummy_test_cond;
     conf.G_phi_target = cm_res.best_conductance * 0.8;
@@ -2197,9 +2239,9 @@ int main(int argc, char **argv) {
     }
 
     //main
-    expander_test(gc, config, config.G_phi_target);
+    //expander_test(gc, config, config.G_phi_target);
 
-    return 0;
+    //return 0;
     vector<map<Node, Node>> cut_maps = decomp(gc, config, map_to_original_graph, node_maps_to_original_graph);
 
     cout << "Done decomp" << endl;
