@@ -2176,18 +2176,36 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
         cut.insert(gc.g.nodeFromId(i));
     }
 
-    cut = connected_component_from_cut(gc, cut); 
+
     map<Node, Node> dummy_map;
 
     GraphContext gc_nodes_removed;
     dummy_map = graph_from_cut(gc, gc_nodes_removed, cut, dummy_map);
 
+    assert(cut.size() >= gc.nodes.size()/2);
+    if (!connected(gc_nodes_removed.g)) {
+        cout << "Graph with nodes removed is not connected. " << endl;
+        set<Node> trim_cut = slow_trimming(gc, conf, cut, cm_res.best_conductance); 
+        //Q: we might return a really small (<<< original nodes / 2) cut in one round
+        //trim_cut = slow_trimming(gc, conf, trim_cut, cm_res.best_conductance);
+        GraphContext slow_trim_gc;
+        graph_from_cut(gc, slow_trim_gc, trim_cut);
+        vector<set<Node>> cc = find_connected_components(slow_trim_gc);
+        cout << "ater slow trim, induced subgraph has n components: " << cc.size() << endl;
+        assert (connected(slow_trim_gc.g) && "Slow trimming must yield connected subgraph");
+        set<Node> fast_trim_cut = trimming(gc, conf, cut, conf.G_phi_target);
+        GraphContext fast_trim_gc;
+        graph_from_cut(gc, fast_trim_gc, fast_trim_cut);
+        assert (connected(slow_trim_gc.g) && "Real trimming must yield connected subgraph");
+    }
+
+
     cm_result cm_res_no_trim;
     run_cut_matching(gc_nodes_removed, conf, cm_res_no_trim);
 
     cout << "CM on non-trimmed subgraph ^^" << endl;
-    set<Node> trim_cut = slow_trimming(gc, conf, cut, cm_res.best_conductance); //large_side_A, phi);
-    trim_cut = slow_trimming(gc, conf, trim_cut, cm_res.best_conductance);
+    set<Node> trim_cut = trimming(gc, conf, cut, cm_res.best_conductance); //large_side_A, phi);
+    trim_cut = trimming(gc, conf, trim_cut, cm_res.best_conductance);
 
     assert (trim_cut.size() > 0);
     GraphContext sg_trimmed;
@@ -2239,9 +2257,9 @@ int main(int argc, char **argv) {
     }
 
     //main
-    //expander_test(gc, config, config.G_phi_target);
+    expander_test(gc, config, config.G_phi_target);
 
-    //return 0;
+    return 0;
     vector<map<Node, Node>> cut_maps = decomp(gc, config, map_to_original_graph, node_maps_to_original_graph);
 
     cout << "Done decomp" << endl;
