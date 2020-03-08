@@ -295,7 +295,7 @@ static void parse_chaco_format(const string &filename, ListGraph &g, vector<Node
                               istream_iterator<string>{}};
         for(string& str : tokens) {
             size_t v_name = stoi(str);
-            cout << "edge to: " << v_name << "..." ;
+            //cout << "edge to: " << v_name << "..." ;
             assert(v_name != 0);
             Node v = nodes[v_name - 1];
             if (findEdge(g, u, v) == INVALID) {
@@ -2290,12 +2290,14 @@ int main(int argc, char **argv) {
     }
 
 
+    cout << "output:" << endl;
     for (const auto &r : node_ratio_edges_inside)
         cout << r << endl;
 
     cout << "singletons: " << n_singletons;
 
     cout << "All nodes included correctly" << endl;
+    cout << "output end" << endl;
 
     ofstream file;
     file.open("cut.txt");
