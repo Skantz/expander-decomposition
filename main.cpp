@@ -98,7 +98,7 @@ struct Configuration {
     double G_phi_target = 0;
     // we only break if we find a good enough cut that is also this balanced (has this minside volume)
     bool use_volume_treshold = false;
-    double volume_treshold_factor = 0;
+    double volume_treshold_factor = 1;
     double h_factor = 0;
     double h_ratio = 0;
 };
@@ -1497,7 +1497,7 @@ set<Node> slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, dou
     cut.clear();
 
     for (DGNodeIt n(sg); n != INVALID; ++n)
-        if (!preflow.minCut(n) && n != s && n != t)
+        if (!preflow.minCut(n)) //) // && n != s && n != t)
             cut.insert(sg_to_orig[n]);
     for (DGNodeIt n(sg); n != INVALID; ++n) {
         ; //cout << (preflow.
@@ -2154,12 +2154,12 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
 
     double test_phi;
     cm_result cm_res;
-    
+    conf.G_phi_target = PHI_UNREACHABLE;
     run_cut_matching(gc, conf, cm_res);
 
     cm_result cm_dummy_test_cond;
-    conf.G_phi_target = cm_res.best_conductance * 0.8;
-    run_cut_matching(gc, conf, cm_dummy_test_cond);
+    conf.G_phi_target = cm_res.best_conductance * 0.9;
+    run_cut_matching(gc, conf, cm_dummy_test_cond); 
 
     assert(cm_dummy_test_cond.reached_H_target);
 
@@ -2168,6 +2168,18 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
     //default_random_engine random_engine = config.seed_randomness
     //                ? default_random_engine(config.seed)
     //                : default_random_engine(random_device()());
+
+    int nodes_to_remove = conf.h_ratio * gc.nodes.size();
+    int h = (double(gc.num_edges) / (10 * conf.volume_treshold_factor * pow(log2(gc.num_edges), 2)));
+    
+    if (nodes_to_remove == 0) {
+        nodes_to_remove = h;
+    }
+    cout << "Original h value is (rounded own) " << h << endl;
+
+    if (nodes_to_remove == 0)
+        nodes_to_remove = 5;
+    
     for (int i = 0; i < gc.nodes.size(); i++)
         indices.push_back(i);
     shuffle(indices.begin(), indices.end(), default_random_engine(random_device()()));
@@ -2176,14 +2188,15 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
         cut.insert(gc.g.nodeFromId(i));
     }
 
-
-    map<Node, Node> dummy_map;
-
     GraphContext gc_nodes_removed;
-    dummy_map = graph_from_cut(gc, gc_nodes_removed, cut, dummy_map);
+    graph_from_cut(gc, gc_nodes_removed, cut);
+    vector<set<Node>> cc_ = find_connected_components(gc_nodes_removed);
+    cout << "before trimming, graph with nodes removed has n components: " << cc_.size() << endl;
 
     assert(cut.size() >= gc.nodes.size()/2);
-    if (!connected(gc_nodes_removed.g)) {
+    //Q: for now, just test if we can connect it again
+    if (true) {
+        assert(!connected(gc_nodes_removed.g));
         cout << "Graph with nodes removed is not connected. " << endl;
         set<Node> trim_cut = slow_trimming(gc, conf, cut, cm_res.best_conductance); 
         //Q: we might return a really small (<<< original nodes / 2) cut in one round
@@ -2191,25 +2204,30 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
         GraphContext slow_trim_gc;
         graph_from_cut(gc, slow_trim_gc, trim_cut);
         vector<set<Node>> cc = find_connected_components(slow_trim_gc);
-        cout << "ater slow trim, induced subgraph has n components: " << cc.size() << endl;
+        cout << "after slow trim, induced subgraph has n components: " << cc.size() << endl;
         assert (connected(slow_trim_gc.g) && "Slow trimming must yield connected subgraph");
         set<Node> fast_trim_cut = trimming(gc, conf, cut, conf.G_phi_target);
         GraphContext fast_trim_gc;
         graph_from_cut(gc, fast_trim_gc, fast_trim_cut);
-        assert (connected(slow_trim_gc.g) && "Real trimming must yield connected subgraph");
+        vector<set<Node>> cc_ = find_connected_components(fast_trim_gc);
+        cout << "after fast trim, induced subgraph has n components: " << cc_.size() << endl;
+        assert (connected(fast_trim_gc.g) && "Real trimming must yield connected subgraph");
+        cut = fast_trim_cut;
     }
 
-
+    GraphContext subgraph_possibly_trimmed;
     cm_result cm_res_no_trim;
-    run_cut_matching(gc_nodes_removed, conf, cm_res_no_trim);
+    map<Node, Node> dummy_map_2;
+    for (NodeIt n(gc.g); n != INVALID; ++n)
+        dummy_map_2[n] = n;
+    dummy_map_2 = graph_from_cut(gc, subgraph_possibly_trimmed, cut, dummy_map_2);
+    run_cut_matching(subgraph_possibly_trimmed, conf, cm_res_no_trim);
 
     cout << "CM on non-trimmed subgraph ^^" << endl;
-    set<Node> trim_cut = trimming(gc, conf, cut, cm_res.best_conductance); //large_side_A, phi);
-    trim_cut = trimming(gc, conf, trim_cut, cm_res.best_conductance);
 
-    assert (trim_cut.size() > 0);
+    assert (cut.size() > 0);
     GraphContext sg_trimmed;
-    graph_from_cut(gc, sg_trimmed, trim_cut);
+    graph_from_cut(gc, sg_trimmed, cut);
 
     cm_result cm_res_after_trimming;
     run_cut_matching(sg_trimmed, conf, cm_res_after_trimming);
