@@ -25,6 +25,7 @@
 #include "preliminaries.h"
 
 #include <omp.h>
+#include <sched.h>
 
 // TODO now
 // Clean the code much more, to be able to do the stopping and edge version
@@ -2064,8 +2065,13 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
 
     else if (cm_res.best_conductance < config.G_phi_target && cm_res.best_relatively_balanced) {
         assert (cut.size() > 0 != gc.nodes.size());
-        //pragma omp parallel for private(A, new_map, empty_map, decomp_map) shared(node_maps_to_original_graph)
+        //omp_get_max_threads()  
+        #pragma omp parallel for  schedule(dynamic, 1) //private(A, new_map, empty_map, decomp_map)  
         for (int i = 0; i < 2; i++) {
+            int thread_num = omp_get_thread_num();
+            int cpu_num = sched_getcpu();
+            printf("parallel: Thread %3d is running on CPU %3d\n", thread_num, cpu_num);
+
             GraphContext A;
 
             map<Node, Node> new_map = graph_from_cut(gc, A, cut, map_to_original_graph, i == 1);
@@ -2073,6 +2079,7 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
 
             vector<map<Node, Node>> empty_map;
             vector<map<Node, Node>> decomp_map = decomp(A, config, new_map, empty_map);
+            #pragma omp critical
             node_maps_to_original_graph.insert(node_maps_to_original_graph.end(), decomp_map.begin(), decomp_map.end());
         }
     }
