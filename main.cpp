@@ -2065,9 +2065,8 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
 
     else if (cm_res.best_conductance < config.G_phi_target && cm_res.best_relatively_balanced) {
         assert (cut.size() > 0 != gc.nodes.size());
-        //int t = omp_get_max_threads();
         //        //private(A, new_map, empty_map, decomp_map)
-        int t = 2;
+        int t = omp_get_max_threads();
         omp_set_nested(1);
         #pragma omp parallel for num_threads(t) schedule(dynamic, 1)
         for (int i = 0; i < 2; i++) {
