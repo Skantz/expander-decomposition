@@ -104,6 +104,8 @@ struct Configuration {
     double volume_treshold_factor = 1;
     double h_factor = 0;
     double h_ratio = 0;
+    int n_nodes_orig = 0;
+    int e_edges_orig = 0;
 };
 
 struct Logger {
@@ -395,6 +397,7 @@ void initGraph(GraphContext &gc, InputConfiguration config) {
             gc.orig_degree[n] += 1;
     }
     gc.num_edges = countEdges(gc.g);
+
 }
 
 // For some reason lemon returns arbitrary values for flow, the difference is correct tho
@@ -2066,8 +2069,11 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
     else if (cm_res.best_conductance < config.G_phi_target && cm_res.best_relatively_balanced) {
         assert (cut.size() > 0 != gc.nodes.size());
         //        //private(A, new_map, empty_map, decomp_map)
-        int t = omp_get_max_threads();
+        //int t = omp_get_max_threads();
+        int t = 4;
         omp_set_nested(1);
+        omp_set_num_threads(4);
+        //omp_set_max_active_levels
         #pragma omp parallel for num_threads(t) schedule(dynamic, 1)
         for (int i = 0; i < 2; i++) {
             int thread_num = omp_get_thread_num();
@@ -2258,8 +2264,8 @@ int main(int argc, char **argv) {
 
     GraphContext gc;
     initGraph(gc, config.input);
-    ListDigraph dg;
-    digraph_from_graph(gc.g, dg);
+    config.n_nodes_orig = gc.nodes.size();
+    config.e_edges_orig = gc.num_edges;
 
     cout << "n: gc.g.nodes.size()" << " e: " << gc.num_edges << endl;
     map<Node, Node> map_to_original_graph;
