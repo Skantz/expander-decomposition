@@ -1,21 +1,21 @@
-//  Cut-matching component authored Ludvig Janiuk 2019 as part of individual project at KTH.
-//  Rest, by me.
+//  Cut-matching component authored Ludvig Janiuk 2019 as part of individual
+//  project at KTH. Rest, by me.
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "cert-msc32-c"
 #pragma ide diagnostic ignored "cppcoreguidelines-slicing"
 
-#include <algorithm>
-#include <array>
 #include <bits/stdc++.h>
-#include <chrono>
-#include <cstdlib>
-#include <iostream>
 #include <lemon/adaptors.h>
 #include <lemon/connectivity.h>
 #include <lemon/core.h>
 #include <lemon/edge_set.h>
 #include <lemon/list_graph.h>
 #include <lemon/preflow.h>
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <ostream>
 #include <random>
@@ -43,12 +43,14 @@ using IncEdgeIt = typename G::IncEdgeIt;
 using OutArcIt = typename G::OutArcIt;
 using Paths = vector<array<Node, 2>>;
 using ArcLookup = ArcLookUp<G>;
-template <class T> using EdgeMap = typename G::template EdgeMap<T>;
-using EdgeMapi =
-    EdgeMap<int>; // LEMON uses ints internally. We might want to look into this
-using EdgeMapb = EdgeMap<bool>; // LEMON uses ints internally. We might want to
-                                // look into this
-template <class T> using NodeMap = typename G::template NodeMap<T>;
+template <class T>
+using EdgeMap = typename G::template EdgeMap<T>;
+using EdgeMapi = EdgeMap<int>;   // LEMON uses ints internally. We might want to
+                                 // look into this
+using EdgeMapb = EdgeMap<bool>;  // LEMON uses ints internally. We might want to
+                                 // look into this
+template <class T>
+using NodeMap = typename G::template NodeMap<T>;
 using NodeMapi = NodeMap<int>;
 using NodeMapb = NodeMap<bool>;
 using NodeNeighborMap = NodeMap<vector<tuple<Node, int>>>;
@@ -103,7 +105,7 @@ struct Configuration {
 struct Logger {
   bool silent = false;
   bool verbose = false;
-  ofstream nul; // UNopened file stream, will act like /dev/null
+  ofstream nul;  // UNopened file stream, will act like /dev/null
   Logger() : nul(){};
   decltype(cout) &progress() { return silent ? nul : cout; };
   decltype(cout) &debug() { return verbose ? cout : nul; };
@@ -129,8 +131,12 @@ using GraphContextp = unique_ptr<GraphContext>;
 // even need to restore.
 struct SubdividedGraphContext {
   SubdividedGraphContext(GraphContext &gc)
-      : origContext(gc), nf(sub_g), ef(sub_g), n_ref(gc.g, INVALID),
-        n_cross_ref(sub_g, INVALID), origs(sub_g, false),
+      : origContext(gc),
+        nf(sub_g),
+        ef(sub_g),
+        n_ref(gc.g, INVALID),
+        n_cross_ref(sub_g, INVALID),
+        origs(sub_g, false),
         only_splits(sub_g, nf, ef){};
 
   GraphContext &origContext;
@@ -155,7 +161,8 @@ struct RoundReport {
   Cutp cut;
 };
 
-template <class G> struct CutStats {
+template <class G>
+struct CutStats {
   using Node = typename G::Node;
   using Edge = typename G::Edge;
   using Cut = set<Node>;
@@ -163,7 +170,7 @@ template <class G> struct CutStats {
   using Bisection = set<Node>;
   size_t crossing_edges = 0;
 
-private:
+ private:
   bool is_min_side;
   size_t min_side = 0;
   size_t cut_volume = 0;
@@ -172,7 +179,7 @@ private:
   long degreesum() { return num_edges * 2; }
   long noncut_volume() { return degreesum() - cut_volume; }
 
-public:
+ public:
   CutStats(const G &g, size_t num_vertices, const Cut &cut) {
     initialize(g, num_vertices, cut);
   }
@@ -182,15 +189,11 @@ public:
     crossing_edges = 0;
     for (EdgeIt e(g); e != INVALID; ++e) {
       ++num_edges;
-      if (is_crossing(g, cut, e))
-        crossing_edges += 1;
+      if (is_crossing(g, cut, e)) crossing_edges += 1;
       // if (any_in_cut(g, cut, e)) cut_volume += 1;
-      if (cut.count(g.u(e)))
-        cut_volume += 1;
-      if (g.u(e) == g.v(e))
-        continue;
-      if (cut.count(g.v(e)))
-        cut_volume += 1;
+      if (cut.count(g.u(e))) cut_volume += 1;
+      if (g.u(e) == g.v(e)) continue;
+      if (cut.count(g.v(e))) cut_volume += 1;
     }
 
     assert(cut.size() <= num_vertices);
@@ -362,8 +365,7 @@ void read_partition_file(const string &filename, const vector<Node> &nodes,
   bool b;
   size_t i = 0;
   while (file >> b) {
-    if (b)
-      partition.insert(nodes[i]);
+    if (b) partition.insert(nodes[i]);
     ++i;
   }
   l.debug() << "Reference patition size: " << partition.size() << endl;
@@ -380,8 +382,7 @@ void initGraph(GraphContext &gc, InputConfiguration config) {
   }
 
   for (NodeIt n(gc.g); n != INVALID; ++n) {
-    for (IncEdgeIt e(gc.g, n); e != INVALID; ++e)
-      gc.orig_degree[n] += 1;
+    for (IncEdgeIt e(gc.g, n); e != INVALID; ++e) gc.orig_degree[n] += 1;
   }
   gc.num_edges = countEdges(gc.g);
 }
@@ -442,8 +443,7 @@ void createSubdividedGraph(SubdividedGraphContext &sgc) {
   }
   vector<Edge> edges;
   for (EdgeIt e(g); e != INVALID; ++e) {
-    if (g.u(e) != g.v(e))
-      edges.push_back(e);
+    if (g.u(e) != g.v(e)) edges.push_back(e);
   }
 
   for (NodeIt n(g); n != INVALID; ++n) {
@@ -451,8 +451,7 @@ void createSubdividedGraph(SubdividedGraphContext &sgc) {
   }
 
   for (auto &e : edges) {
-    if (g.u(e) == g.v(e))
-      continue;
+    if (g.u(e) == g.v(e)) continue;
     Node u = g.u(e);
     Node v = g.v(e);
     g.erase(e);
@@ -461,8 +460,7 @@ void createSubdividedGraph(SubdividedGraphContext &sgc) {
     sgc.origs[s] = false;
     sgc.only_splits.enable(s);
     g.addEdge(u, s);
-    if (u != v)
-      g.addEdge(s, v);
+    if (u != v) g.addEdge(s, v);
 
     // if (u !=v)
     sgc.split_vertices.push_back(s);
@@ -502,7 +500,7 @@ struct CutMatching {
     Node t;
     EdgeMapi capacity;
     CutMap cut_map;
-    Snapshot snap; // RAII
+    Snapshot snap;  // RAII
 
     explicit MatchingContext(G &g_)
         : g(g_), capacity(g_), cut_map(g_), snap(g_) {}
@@ -517,10 +515,8 @@ struct CutMatching {
     Cutp extract_cut() {
       Cutp cut(new Cut);
       for (NodeIt n(g); n != INVALID; ++n) {
-        if (n == s || n == t)
-          continue;
-        if (cut_map[n])
-          cut->insert(n);
+        if (n == s || n == t) continue;
+        if (cut_map[n]) cut->insert(n);
       }
       return move(cut);
     }
@@ -535,13 +531,13 @@ struct CutMatching {
   struct MatchResult {
     Cutp cut_from_flow;
     size_t
-        capacity; // First capacity (minumum) that worked to get full flow thru
+        capacity;  // First capacity (minumum) that worked to get full flow thru
   };
 
   inline void extract_path_fast(const G &g,
                                 const unique_ptr<Preflow<G, EdgeMapi>> &f,
                                 NodeNeighborMap &flow_children, Node u_orig,
-                                Node t, // For assertsions
+                                Node t,  // For assertsions
                                 array<Node, 2> &out_path) {
     out_path[0] = u_orig;
     Node u = u_orig;
@@ -554,8 +550,7 @@ struct CutMatching {
       Node v = get<0>(tup);
       --get<1>(tup);
 
-      if (get<1>(tup) == 0)
-        flow_children[u].pop_back();
+      if (get<1>(tup) == 0) flow_children[u].pop_back();
 
       if (flow_children[v].empty()) {
         assert(v == t);
@@ -579,8 +574,7 @@ struct CutMatching {
     // Calc flow children (one pass)
     ArcLookup alp(mg.g);
     for (EdgeIt e(mg.g); e != INVALID; ++e) {
-      if (mg.g.u(e) == mg.g.v(e))
-        continue;
+      if (mg.g.u(e) == mg.g.v(e)) continue;
       Node u = mg.g.u(e);
       Node v = mg.g.v(e);
       long e_flow = flow(alp, f, u, v);
@@ -592,8 +586,7 @@ struct CutMatching {
     }
 
     for (IncEdgeIt e(mg.g, mg.s); e != INVALID; ++e) {
-      if (mg.g.u(e) == mg.g.v(e))
-        continue;
+      if (mg.g.u(e) == mg.g.v(e)) continue;
       assert(mg.g.u(e) == mg.s || mg.g.v(e) == mg.s);
       Node u = mg.g.u(e) == mg.s ? mg.g.v(e) : mg.g.u(e);
 
@@ -607,8 +600,8 @@ struct CutMatching {
   void run_min_cut(const MatchingContext &mg, unique_ptr<FlowAlgo> &p) const {
     p.reset(new Preflow<G, EdgeMapi>(mg.g, mg.capacity, mg.s, mg.t));
     auto start2 = now();
-    p->runMinCut(); // Note that "startSecondPhase" must be run to get flows for
-                    // individual verts
+    p->runMinCut();  // Note that "startSecondPhase" must be run to get flows
+                     // for individual verts
     auto stop2 = now();
     l.progress() << "flow: " << p->flowValue() << " ("
                  << duration_sec(start2, stop2) << " s)" << endl;
@@ -617,8 +610,7 @@ struct CutMatching {
   // This should work well for sub too
   void set_matching_capacities(MatchingContext &mg, size_t cap) const {
     for (EdgeIt e(mg.g); e != INVALID; ++e) {
-      if (mg.touches_source_or_sink(e))
-        continue;
+      if (mg.touches_source_or_sink(e)) continue;
       mg.capacity[e] = cap;
     }
   }
@@ -650,8 +642,7 @@ struct CutMatching {
         p->minCutMap(mg.cut_map);
       }
 
-      if (reachedFullFlow)
-        break;
+      if (reachedFullFlow) break;
     }
 
     // Not we copy out the cut
@@ -677,10 +668,8 @@ struct CutMatching {
     int s_added = 0;
     int t_added = 0;
     for (typename GG::NodeIt n(g); n != INVALID; ++n) {
-      if (n == mg.s)
-        continue;
-      if (n == mg.t)
-        continue;
+      if (n == mg.s) continue;
+      if (n == mg.t) continue;
       Edge e;
       if (cut.count(n)) {
         e = g.addEdge(mg.s, n);
@@ -945,10 +934,8 @@ struct CutMatching {
   // Stopping condition
   bool sub_should_stop() {
     int i = sub_past_rounds.size();
-    if (i == 0 || i == 1)
-      return false;
-    if (i >= config.max_rounds && config.max_rounds != 0)
-      return true;
+    if (i == 0 || i == 1) return false;
+    if (i >= config.max_rounds && config.max_rounds != 0) return true;
 
     const auto &last_round = sub_past_rounds[sub_past_rounds.size() - 1];
 
@@ -1039,8 +1026,9 @@ cxxopts::Options create_options() {
       "h_ratio", "use balance ratio instead",
       cxxopts::value<double>()->implicit_value("0.0"))(
       "S,Silent", "Only output one line of summary at the end")(
-      "v,verbose", "Debug; Whether to print nodes and cuts Does not include "
-                   "paths. Produces a LOT of output on large graphs.")(
+      "v,verbose",
+      "Debug; Whether to print nodes and cuts Does not include "
+      "paths. Produces a LOT of output on large graphs.")(
       "d,paths", "Debug; Whether to print paths");
   return options;
 }
@@ -1069,15 +1057,12 @@ void parse_options(int argc, char **argv, Configuration &config) {
     config.input.load_from_file = true;
     config.input.file_name = result["file"].as<string>();
   }
-  if (result.count("nodes"))
-    assert(!config.input.load_from_file);
+  if (result.count("nodes")) assert(!config.input.load_from_file);
   config.input.n_nodes_to_generate = result["nodes"].as<long>();
   if (result.count("max-rounds"))
     config.max_rounds = result["max-rounds"].as<long>();
-  if (result.count("verbose"))
-    l.verbose = result["verbose"].as<bool>();
-  if (result.count("Silent"))
-    l.silent = result["Silent"].as<bool>();
+  if (result.count("verbose")) l.verbose = result["verbose"].as<bool>();
+  if (result.count("Silent")) l.silent = result["Silent"].as<bool>();
 
   if (result.count("seed")) {
     config.seed_randomness = true;
@@ -1102,10 +1087,12 @@ void parse_options(int argc, char **argv, Configuration &config) {
 
 using DG = ListDigraph;
 using DGNode = typename DG::Node;
-template <class T> using DGNodeMap = typename DG::template NodeMap<T>;
+template <class T>
+using DGNodeMap = typename DG::template NodeMap<T>;
 using DGNodeIt = typename DG::NodeIt;
 using Arc = typename DG::Arc;
-template <class T> using ArcMap = typename DG::template ArcMap<T>;
+template <class T>
+using ArcMap = typename DG::template ArcMap<T>;
 using DGOutArcIt = typename DG::OutArcIt;
 
 /*
@@ -1127,9 +1114,7 @@ set<Node> cut_complement(vector<Node> nodes, set<Node> cut) {
 }
 
 ListDigraph *digraph_from_graph(G &g, DG &dg) {
-
-  for (NodeIt n(g); n != INVALID; ++n)
-    dg.addNode();
+  for (NodeIt n(g); n != INVALID; ++n) dg.addNode();
 
   for (EdgeIt a(g); a != INVALID; ++a) {
     Arc a1 =
@@ -1142,9 +1127,7 @@ ListDigraph *digraph_from_graph(G &g, DG &dg) {
 }
 
 ListDigraph *digraph_from_graph(G &g, DG &dg, ArcMap<Arc> &reverse_arc) {
-
-  for (NodeIt n(g); n != INVALID; ++n)
-    dg.addNode();
+  for (NodeIt n(g); n != INVALID; ++n) dg.addNode();
 
   for (EdgeIt a(g); a != INVALID; ++a) {
     Arc a1 =
@@ -1159,10 +1142,13 @@ ListDigraph *digraph_from_graph(G &g, DG &dg, ArcMap<Arc> &reverse_arc) {
 }
 
 struct flow_instance {
-
   flow_instance(DG &dg_, double phi)
-      : edge_flow(dg_, 0.0), edge_cap(dg_, 2.0 / phi), reverse_arc(dg_),
-        node_flow(dg_, 0.0), node_cap(dg_, 0.0), node_label(dg_, 0),
+      : edge_flow(dg_, 0.0),
+        edge_cap(dg_, 2.0 / phi),
+        reverse_arc(dg_),
+        node_flow(dg_, 0.0),
+        node_cap(dg_, 0.0),
+        node_label(dg_, 0),
         initial_mass(dg_, 0.0){};
 
   int h;
@@ -1246,7 +1232,7 @@ set<DGNode> level_cut(DG &dg, flow_instance &fp,
         { z_i++; }
       }
     }
-    if (z_i <= 5. * s_vol * log2(e) / level_queue.size()) { // /fp.h before
+    if (z_i <= 5. * s_vol * log2(e) / level_queue.size()) {  // /fp.h before
       cut_index = i;
       break;
     }
@@ -1261,8 +1247,7 @@ set<DGNode> level_cut(DG &dg, flow_instance &fp,
 
   cout << "local flow: n upper nodes: " << n_upper_nodes << endl;
   assert(n_upper_nodes <= fp.A.size());
-  if (n_upper_nodes == 0)
-    return trimmed_nodes;
+  if (n_upper_nodes == 0) return trimmed_nodes;
 
   // if (n_upper_nodes < fp.A.size()/2) {
   if (true) {
@@ -1328,7 +1313,6 @@ void adjust_flow_source(DG &dg, flow_instance &fp, set<DGNode> trimmed_nodes) {
 }
 
 void uf(DG &dg, flow_instance &fp) {
-
   bool excess_flow;
   assert(fp.A.size() > 0 && fp.R.size() > 0 && fp.A.size() > fp.R.size());
   // Set up level queues
@@ -1371,11 +1355,9 @@ unit_start:
     excess_flow = true;
     assert(fp.node_flow[n] > 0);
     assert(fp.node_label[n] < fp.h - 1);
-    assert(fp.node_flow[n] > fp.node_cap[n]); // push-relabel
+    assert(fp.node_flow[n] > fp.node_cap[n]);  // push-relabel
     for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
-
-      if (dg.source(e) == dg.target(e))
-        continue;
+      if (dg.source(e) == dg.target(e)) continue;
       if (!fp.A.count(dg.source(e)) || !fp.A.count(dg.target(e))) {
         // cout << "local flow: try to push inside R" << endl;
         continue;
@@ -1386,7 +1368,7 @@ unit_start:
         assert(fp.edge_flow[e] >= 2. / fp.phi);
 
       if (fp.node_label[n] - fp.node_label[(dg.target(e))] == 1 &&
-          fp.edge_cap[e] - fp.edge_flow[e] > 0) { // push
+          fp.edge_cap[e] - fp.edge_flow[e] > 0) {  // push
         assert(fp.node_flow[dg.target(e)] - fp.node_cap[dg.target(e)] <= 0);
         double ex_flow = fp.node_flow[n] - fp.node_cap[n];
         double res_flow = 2. / fp.phi - fp.edge_flow[e];
@@ -1416,8 +1398,7 @@ unit_start:
 
     // relabel
     for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
-      if (n == dg.target(e) || !fp.A.count(dg.target(e)))
-        continue;
+      if (n == dg.target(e) || !fp.A.count(dg.target(e))) continue;
       assert(n == dg.source(e));
       if (fp.edge_cap[e] - fp.edge_flow[e] > 0) {
         if (fp.node_label[n] > fp.node_label[dg.target(e)]) {
@@ -1441,8 +1422,7 @@ unit_start:
     fp.node_label[n] = fp.node_label[n] + 1;
     assert(level_queue[lv + 1].size() == c1 + 1);
     assert(level_queue[lv].size() == c2 - 1);
-    if (fp.node_label[n] >= fp.h - 1)
-      fp.active_nodes.erase(n);
+    if (fp.node_label[n] >= fp.h - 1) fp.active_nodes.erase(n);
     goto unit_start;
   }
 
@@ -1455,8 +1435,7 @@ unit_start:
   cout << "local flow: cut_size_after" << fp.A.size() << endl;
   cout << "local flow: complement siz after" << fp.R.size() << endl;
 
-  if (cut_size_before == fp.A.size())
-    return;
+  if (cut_size_before == fp.A.size()) return;
 
   fp.active_nodes.clear();
   for (auto &n : fp.A) {
@@ -1476,7 +1455,6 @@ unit_start:
 
 set<Node> slow_trimming(GraphContext &gc, Configuration conf, set<Node> cut,
                         double phi) {
-
   assert(cut.size() >= gc.nodes.size() / 2);
   DG sg;
   DGNodeMap<Node> sg_to_orig(sg);
@@ -1507,8 +1485,7 @@ set<Node> slow_trimming(GraphContext &gc, Configuration conf, set<Node> cut,
     DGNode sg_v = orig_to_sg[v];
     orig_degree[u] += 1;
     orig_degree[v] += 1;
-    if (u == v)
-      continue;
+    if (u == v) continue;
     if (in_cut[u] && in_cut[v]) {
       Arc e1 = sg.addArc(sg_u, sg_v);
       Arc e2 = sg.addArc(sg_v, sg_u);
@@ -1542,8 +1519,8 @@ set<Node> slow_trimming(GraphContext &gc, Configuration conf, set<Node> cut,
   cout << "IDs for s, t are... " << sg.id(s) << ", " << sg.id(t) << endl;
   for (DGNodeIt n(sg); n != INVALID; ++n)
     if (n != t && n != s)
-      ; // cout << "local flow: Reached n: " << gc.g.id(sg_to_orig[n]) << " ? "
-        // << bfs.reached(n) << endl;
+      ;  // cout << "local flow: Reached n: " << gc.g.id(sg_to_orig[n]) << " ? "
+         // << bfs.reached(n) << endl;
   // assert(bfs.reached(t));
   if (!bfs.reached(t)) {
     cout << "local flow: WARNING - A not connected" << endl;
@@ -1555,11 +1532,11 @@ set<Node> slow_trimming(GraphContext &gc, Configuration conf, set<Node> cut,
 
   for (DGNodeIt n(sg); n != INVALID; ++n) {
     // cout << preflow.minCut(n) << " : " << sg.id(n) << endl;
-    if (!preflow.minCut(n) && n != s && n != t) //) // && n != s && n != t)
+    if (!preflow.minCut(n) && n != s && n != t)  //) // && n != s && n != t)
       cut.insert(sg_to_orig[n]);
   }
   for (DGNodeIt n(sg); n != INVALID; ++n) {
-    ; // cout << (preflow.
+    ;  // cout << (preflow.
   }
 
   cout << "local flow: cut size after " << cut.size() << endl;
@@ -1570,7 +1547,6 @@ set<Node> slow_trimming(GraphContext &gc, Configuration conf, set<Node> cut,
 
 set<Node> trimming(GraphContext &gc, Configuration conf, set<Node> cut,
                    double phi) {
-
   // assert (phi >= 0.00001);
   assert(cut.size() >= gc.nodes.size() / 2);
   DG dg;
@@ -1584,15 +1560,13 @@ set<Node> trimming(GraphContext &gc, Configuration conf, set<Node> cut,
   set<DGNode> A;
 
   // Setup larger side A and complement
-  for (auto &n : cut)
-    A.insert(dg.nodeFromId(gc.g.id(n)));
+  for (auto &n : cut) A.insert(dg.nodeFromId(gc.g.id(n)));
 
   std::set_difference(gc.nodes.begin(), gc.nodes.end(), cut.begin(), cut.end(),
                       std::inserter(R_ug, R_ug.end()));
   // cut.swap(R_ug);
 
-  for (auto &n : R_ug)
-    R.insert(dg.nodeFromId(gc.g.id(n)));
+  for (auto &n : R_ug) R.insert(dg.nodeFromId(gc.g.id(n)));
 
   assert(R.size() <= A.size());
 
@@ -1664,13 +1638,11 @@ set<Node> trimming(GraphContext &gc, Configuration conf, set<Node> cut,
 
   // dummy
   cut.clear();
-  for (auto &n : fp.A)
-    cut.insert(gc.g.nodeFromId(dg.id(n)));
+  for (auto &n : fp.A) cut.insert(gc.g.nodeFromId(dg.id(n)));
   return cut;
 }
 
 void graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut) {
-
   map<Node, Node> reverse_map = map<Node, Node>();
   set<Node> all_nodes = set<Node>();
   set<Node> complement_nodes = set<Node>();
@@ -1692,10 +1664,10 @@ void graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut) {
         sum_all_edges++;
       if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
           g.g.source(a) <
-              g.g.target(a)) { // findEdge(sg.g, reverse_map[g.g.source(a)],
-                               // reverse_map[g.g.target(a)]) == INVALID) {
-                               // //Edge inside cut
-        assert(reverse_map[n] != reverse_map[g.g.target(a)]); // no self -loop
+              g.g.target(a)) {  // findEdge(sg.g, reverse_map[g.g.source(a)],
+                                // reverse_map[g.g.target(a)]) == INVALID) {
+                                // //Edge inside cut
+        assert(reverse_map[n] != reverse_map[g.g.target(a)]);  // no self -loop
         assert(sg.g.id(reverse_map[g.g.source(a)]) < sg.nodes.size() &&
                sg.g.id(reverse_map[g.g.target(a)]) < sg.nodes.size());
         sg.g.addEdge(reverse_map[g.g.source(a)], reverse_map[g.g.target(a)]);
@@ -1705,8 +1677,8 @@ void graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut) {
       else if (cut.count(g.g.target(a)) == 0 && cut.count(g.g.source(a)) > 0 &&
                g.g.source(a) <
                    g.g.target(
-                       a)) { //&& findEdge(sg.g, reverse_map[g.g.source(a)],
-                             //reverse_map[g.g.target(a)]) == INVALID) {
+                       a)) {  //&& findEdge(sg.g, reverse_map[g.g.source(a)],
+                              // reverse_map[g.g.target(a)]) == INVALID) {
         sg.g.addEdge(reverse_map[g.g.source(a)], reverse_map[g.g.source(a)]);
         sg.num_edges++;
       }
@@ -1753,7 +1725,7 @@ map<Node, Node> graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut,
         sum_all_edges++;
       if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
           g.g.source(a) < g.g.target(a)) {
-        assert(reverse_map[n] != reverse_map[g.g.target(a)]); // no self -loop
+        assert(reverse_map[n] != reverse_map[g.g.target(a)]);  // no self -loop
         assert(sg.g.id(reverse_map[g.g.source(a)]) < sg.nodes.size() &&
                sg.g.id(reverse_map[g.g.target(a)]) < sg.nodes.size());
         sg.g.addEdge(reverse_map[g.g.source(a)], reverse_map[g.g.target(a)]);
@@ -1773,7 +1745,6 @@ map<Node, Node> graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut,
 }
 
 vector<set<Node>> find_connected_components(GraphContext &g) {
-
   NodeMap<bool> visited_nodes(g.g, false);
   vector<set<Node>> labels;
 
@@ -1790,8 +1761,7 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
 
   // Q:
   int test_check = 0;
-  for (NodeIt n(g.g); n != INVALID; ++n)
-    test_check = test_check + 1;
+  for (NodeIt n(g.g); n != INVALID; ++n) test_check = test_check + 1;
   assert(test_check == g.nodes.size());
   while (n_visited < g.nodes.size()) {
     labels.push_back(set<Node>());
@@ -1850,8 +1820,7 @@ vector<set<Node>> find_connected_components(GraphContext &g) {
   }
 return_labels:
   int tot = 0;
-  for (auto &l : labels)
-    tot = tot + l.size();
+  for (auto &l : labels) tot = tot + l.size();
   cout << "N visited " << n_visited << "actual: " << tot << " g node size "
        << g.nodes.size() << " cc:  " << cc << endl;
   // assert (n_visited == g.nodes.size());
@@ -1862,7 +1831,6 @@ return_labels:
 }
 
 set<Node> connected_component_from_cut(GraphContext &gc_orig, set<Node> A) {
-
   set<Node> R;
 
   std::set_difference(gc_orig.nodes.begin(), gc_orig.nodes.end(), A.begin(),
@@ -1877,8 +1845,7 @@ set<Node> connected_component_from_cut(GraphContext &gc_orig, set<Node> A) {
   GraphContext R_sg;
 
   map<Node, Node> gc_to_gc;
-  for (auto &n : gc_orig.nodes)
-    gc_to_gc[n] = n;
+  for (auto &n : gc_orig.nodes) gc_to_gc[n] = n;
   map<Node, Node> A_to_orig = graph_from_cut(gc_orig, A_sg, A, gc_to_gc);
   map<Node, Node> R_to_orig = graph_from_cut(gc_orig, R_sg, R, gc_to_gc);
 
@@ -1896,21 +1863,17 @@ set<Node> connected_component_from_cut(GraphContext &gc_orig, set<Node> A) {
     if (components_A.size() > 1) {
       for (auto c = components_A.begin() + 1; c != components_A.end(); c++) {
         // R.insert((*c).begin(), (*c).end());
-        for (auto &n : *c)
-          R.insert(A_to_orig[n]);
+        for (auto &n : *c) R.insert(A_to_orig[n]);
       }
       A.clear();
-      for (auto &n : *components_A.begin())
-        A.insert(A_to_orig[n]);
+      for (auto &n : *components_A.begin()) A.insert(A_to_orig[n]);
       // A = *components_A.begin();
     } else if (components_R.size() > 1) {
       for (auto c = components_R.begin() + 1; c != components_R.end(); c++) {
-        for (auto &n : *c)
-          A.insert(R_to_orig[n]);
+        for (auto &n : *c) A.insert(R_to_orig[n]);
       }
       R.clear();
-      for (auto &n : *components_R.begin())
-        R.insert(R_to_orig[n]);
+      for (auto &n : *components_R.begin()) R.insert(R_to_orig[n]);
     }
     assert(A.size() + R.size() == gc_orig.nodes.size());
     GraphContext A_sg_, R_sg_;
@@ -1924,8 +1887,7 @@ set<Node> connected_component_from_cut(GraphContext &gc_orig, set<Node> A) {
   }
   assert(A.size() + R.size() == gc_orig.nodes.size());
   // graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut)
-  if (A.size() >= R.size())
-    return A;
+  if (A.size() >= R.size()) return A;
   return R;
 }
 
@@ -1982,7 +1944,6 @@ struct cm_result {
 
 void run_cut_matching(GraphContext &gc, Configuration &config,
                       cm_result &cm_res) {
-
   assert(connected(gc.g));
   assert(gc.nodes.size() > 2);
 
@@ -2076,28 +2037,24 @@ bool test_subgraph_expansion(GraphContext &gc, Configuration config,
 
 struct decomp_trace {
   int depth = 0;
-  int size  = 0;
+  int size = 0;
 };
 
 struct decomp_stats {
   int n_decomps = 0;
-  int n_trims   = 0;
+  int n_trims = 0;
   double time_in_cm = 0.;
   double time_in_fl = 0.;
   vector<decomp_trace> traces;
 };
 
-
-vector<map<Node, Node>>
-decomp(GraphContext &gc, Configuration config,
-       map<Node, Node> map_to_original_graph,
-       vector<map<Node, Node>> node_maps_to_original_graph,
-       decomp_stats stats) {
-
+vector<map<Node, Node>> decomp(
+    GraphContext &gc, Configuration config,
+    map<Node, Node> map_to_original_graph,
+    vector<map<Node, Node>> node_maps_to_original_graph, decomp_stats stats) {
   int x = 0;
 
-  if (gc.nodes.size() == 0)
-    return node_maps_to_original_graph;
+  if (gc.nodes.size() == 0) return node_maps_to_original_graph;
 
   if (gc.nodes.size() == 1) {
     node_maps_to_original_graph.push_back(map_to_original_graph);
@@ -2146,24 +2103,24 @@ decomp(GraphContext &gc, Configuration config,
 
   cm_result cm_res;
 
-   /*
-    auto start2 = now();
-    p->runMinCut(); // Note that "startSecondPhase" must be run to get flows for
-                    // individual verts
-    auto stop2 = now();
-    l.progress() << "flow: " << p->flowValue() << " ("
-                 << duration_sec(start2, stop2) << " s)" << endl;
-  }
-  */
+  /*
+   auto start2 = now();
+   p->runMinCut(); // Note that "startSecondPhase" must be run to get flows for
+                   // individual verts
+   auto stop2 = now();
+   l.progress() << "flow: " << p->flowValue() << " ("
+                << duration_sec(start2, stop2) << " s)" << endl;
+ }
+ */
   auto start = now();
   run_cut_matching(gc, config, cm_res);
   auto stop = now();
   stats.time_in_cm += duration_sec(start, stop);
   stats.n_decomps += 1;
-  
+
   set<Node> cut;
   //(cm_res.reached_H_target == true && cm_res.best_relatively_balanced)? cut =
-  //cm_res.best_cut : cut = cm_res.last_cut;
+  // cm_res.best_cut : cut = cm_res.last_cut;
 
   cut = cm_res.best_cut;
   !(cm_res.reached_H_target) && cm_res.best_relatively_balanced
@@ -2272,7 +2229,7 @@ decomp(GraphContext &gc, Configuration config,
                                        decomp_map.begin(), decomp_map.end());
   }
 
-  else { // provisional round limit
+  else {  // provisional round limit
     cout << "CASE(4) no good cut, round break, G certified nothing." << endl;
     node_maps_to_original_graph.push_back(map_to_original_graph);
     assert(false);
@@ -2283,7 +2240,6 @@ decomp(GraphContext &gc, Configuration config,
 
 void butterfly_test(Configuration config, int ls, int rs, int conn_ls,
                     int conn_rs) {
-
   GraphContext gc;
   for (int i = 0; i < ls + rs + 1; i++) {
     Node x = gc.g.addNode();
@@ -2347,7 +2303,6 @@ void butterfly_test(Configuration config, int ls, int rs, int conn_ls,
 }
 
 void test_connect_subgraph(GraphContext &gc, Configuration conf, double phi) {
-
   GraphContext sg;
   GraphContext sg_slow;
   GraphContext sg_fast;
@@ -2362,7 +2317,6 @@ void test_connect_subgraph(GraphContext &gc, Configuration conf, double phi) {
   phi = 0.001;
   double ratio_to_remove = 0.05;
   do {
-
     shuffle(indices.begin(), indices.end(),
             default_random_engine(random_device()()));
     indices.erase(indices.begin(),
@@ -2399,7 +2353,6 @@ void test_connect_subgraph(GraphContext &gc, Configuration conf, double phi) {
 }
 
 void test_expander(GraphContext &gc, Configuration conf, double phi) {
-
   // butterfly_test(conf, 10, 10, 2, 2);
   // butterfly_test(conf, 3, 3, 1, 1);
   // butterfly_test(conf, 1, 500, 1, 1);
@@ -2440,8 +2393,7 @@ void test_expander(GraphContext &gc, Configuration conf, double phi) {
   }
   cout << "removing n nodes: " << nodes_to_remove << endl;
 
-  for (int i = 0; i < gc.nodes.size(); i++)
-    indices.push_back(i);
+  for (int i = 0; i < gc.nodes.size(); i++) indices.push_back(i);
   shuffle(indices.begin(), indices.end(),
           default_random_engine(random_device()()));
   indices.erase(indices.begin(),
@@ -2500,8 +2452,7 @@ void test_expander(GraphContext &gc, Configuration conf, double phi) {
   GraphContext subgraph_possibly_trimmed;
   cm_result cm_res_no_trim;
   map<Node, Node> dummy_map_2;
-  for (NodeIt n(gc.g); n != INVALID; ++n)
-    dummy_map_2[n] = n;
+  for (NodeIt n(gc.g); n != INVALID; ++n) dummy_map_2[n] = n;
   dummy_map_2 = graph_from_cut(gc, subgraph_possibly_trimmed, cut, dummy_map_2);
   run_cut_matching(subgraph_possibly_trimmed, conf, cm_res_no_trim);
 
@@ -2530,14 +2481,11 @@ void test_expander(GraphContext &gc, Configuration conf, double phi) {
   return;
 }
 
-
 int main(int argc, char **argv) {
-
   Configuration config = Configuration();
   parse_options(argc, argv, config);
 
-  if (config.show_help_and_exit)
-    return 0;
+  if (config.show_help_and_exit) return 0;
 
   GraphContext gc;
   initGraph(gc, config.input);
@@ -2547,8 +2495,7 @@ int main(int argc, char **argv) {
   cout << "n: gc.g.nodes.size()"
        << " e: " << gc.num_edges << endl;
   map<Node, Node> map_to_original_graph;
-  for (NodeIt n(gc.g); n != INVALID; ++n)
-    map_to_original_graph[n] = n;
+  for (NodeIt n(gc.g); n != INVALID; ++n) map_to_original_graph[n] = n;
 
   vector<set<Node>> cuts = vector<set<Node>>();
   vector<map<Node, Node>> node_maps_to_original_graph =
@@ -2557,17 +2504,16 @@ int main(int argc, char **argv) {
   map<Node, int> degree;
   for (NodeIt n(gc.g); n != INVALID; ++n) {
     int d = 0;
-    for (IncEdgeIt e(gc.g, n); e != INVALID; ++e)
-      d++;
+    for (IncEdgeIt e(gc.g, n); e != INVALID; ++e) d++;
     degree[n] = d;
   }
 
   // main
-  //test_expander(gc, config, config.G_phi_target);
+  // test_expander(gc, config, config.G_phi_target);
 
   decomp_stats stats;
-  vector<map<Node, Node>> cut_maps =
-      decomp(gc, config, map_to_original_graph, node_maps_to_original_graph, stats);
+  vector<map<Node, Node>> cut_maps = decomp(gc, config, map_to_original_graph,
+                                            node_maps_to_original_graph, stats);
 
   cout << "Done decomp" << endl;
 
@@ -2621,8 +2567,7 @@ int main(int argc, char **argv) {
   }
 
   cout << "output:" << endl;
-  for (const auto &r : node_ratio_edges_inside)
-    cout << r << endl;
+  for (const auto &r : node_ratio_edges_inside) cout << r << endl;
 
   cout << "singletons: " << n_singletons;
 
@@ -2632,7 +2577,7 @@ int main(int argc, char **argv) {
   ofstream file;
   file.open("cut.txt");
   if (!file) {
-    cout << "Cannot open file "; // << OUTPUT_FILE << endl;
+    cout << "Cannot open file ";  // << OUTPUT_FILE << endl;
     return 1;
   }
 
