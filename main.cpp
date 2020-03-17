@@ -1089,6 +1089,24 @@ template<class T> using ArcMap = typename DG::template ArcMap<T>;
 using DGOutArcIt = typename DG::OutArcIt;
 
 
+/*
+    for (auto& n: cut)
+        A.insert(dg.nodeFromId(gc.g.id(n)));
+    
+    std::set_difference(gc.nodes.begin(), gc.nodes.end(), cut.begin(), cut.end(),
+            std::inserter(R_ug, R_ug.end()));
+    //cut.swap(R_ug);
+*/
+
+set<Node> cut_complement(vector<Node> nodes, set<Node> cut) {
+    set<Node> R;
+
+    std::set_difference(nodes.begin(), nodes.end(), cut.begin(), cut.end(),
+            std::inserter(R, R.end()));
+
+    return R;
+}
+
 ListDigraph *digraph_from_graph(G &g, DG &dg) {
 
     for(NodeIt n(g); n!=INVALID; ++n)
@@ -1380,7 +1398,7 @@ void uf(DG& dg, flow_instance& fp) {
             }
                 //assert (fp.node_label[n] <= fp.node_label[dg.target(e)]);
         }
-        //cout << "local flow: relabel" << endl;
+
         int lv = fp.node_label[n];
         assert (find(level_queue[lv].begin(), level_queue[lv].end(), n) != level_queue[lv].end() );
         int c1 = level_queue[lv + 1].size();
@@ -1427,7 +1445,7 @@ set<Node> slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, dou
     DG sg;
     DGNodeMap<Node> sg_to_orig(sg);
     NodeMap<DGNode> orig_to_sg(gc.g);
-    ArcMap<int> cap(sg, 0);
+    ArcMap<int> cap(sg, 0.);
     NodeMap<int> orig_degree(gc.g, 0);
 
     //reverse definition
@@ -1458,16 +1476,16 @@ set<Node> slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, dou
         if (in_cut[u] && in_cut[v]) {
             Arc e1 = sg.addArc(sg_u, sg_v);
             Arc e2 = sg.addArc(sg_v, sg_u);
-            cap[e1] = 2/phi;
-            cap[e2] = 2/phi;
+            cap[e1] = 2./phi;
+            cap[e2] = 2./phi;
         }
         else if (in_cut[u] && !in_cut[v]) {
             Arc e = sg.addArc(s, sg_u);
-            cap[e] = 2/phi;
+            cap[e] = 2./phi;
         }
         else if (!in_cut[u] && in_cut[v]) {
             Arc e = sg.addArc(sg_v, s);
-            cap[e] = 2/phi;
+            cap[e] = 2./phi;
         }
         else {
             continue;
@@ -1481,7 +1499,6 @@ set<Node> slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, dou
         }
 
 
-
     Preflow<DG> preflow(sg, cap, s, t);
     preflow.init();
     preflow.run();
@@ -1490,6 +1507,7 @@ set<Node> slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, dou
     Bfs<DG> bfs(sg);
     bfs.run(s);
 
+    cout << "IDs for s, t are... " << sg.id(s) << ", " << sg.id(t) << endl;
     for (DGNodeIt n(sg); n != INVALID; ++n)
         if (n != t && n != s)
             ; //cout << "local flow: Reached n: " << gc.g.id(sg_to_orig[n]) << " ? " << bfs.reached(n) << endl;
@@ -1502,9 +1520,11 @@ set<Node> slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, dou
 
     cut.clear();
 
-    for (DGNodeIt n(sg); n != INVALID; ++n)
-        if (!preflow.minCut(n)) //) // && n != s && n != t)
+    for (DGNodeIt n(sg); n != INVALID; ++n) {
+        //cout << preflow.minCut(n) << " : " << sg.id(n) << endl;
+        if (!preflow.minCut(n) && n != s && n != t) //) // && n != s && n != t)
             cut.insert(sg_to_orig[n]);
+    }
     for (DGNodeIt n(sg); n != INVALID; ++n) {
         ; //cout << (preflow.
     }
@@ -1518,7 +1538,7 @@ set<Node> slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, dou
 
 set<Node> trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi) {
 
-    assert (phi >= 0.00001);
+    //assert (phi >= 0.00001);
     assert (cut.size() >= gc.nodes.size()/2);
     DG dg;
     digraph_from_graph(gc.g, dg);
@@ -2149,17 +2169,113 @@ vector<map<Node, Node>> decomp(GraphContext &gc, Configuration config, map<Node,
 }
 
 
-void expander_test(GraphContext& gc, Configuration conf, double phi) {
-    /*
+void butterfly_test(Configuration config, int ls, int rs, int conn_ls, int conn_rs) {
+
+    GraphContext gc;
+    for (int i = 0; i < ls + rs + 1; i++) {
+        Node x = gc.g.addNode();
+        gc.nodes.push_back(x);
+    }
+    for (int i = 0; i < ls; i++) {
+        for (int j = i + 1; j < ls; j++) {
+            gc.g.addEdge(gc.g.nodeFromId(i), gc.g.nodeFromId(j));
+            gc.num_edges++;
+        }
+        if (i < conn_ls) {
+            gc.g.addEdge(gc.g.nodeFromId(i), gc.g.nodeFromId(ls + rs));
+            gc.num_edges++;
+        }
+    }
+    for (int i = ls; i < ls + rs; i++) {
+        for (int j = i + 1; j < ls + rs; j++) {
+            gc.g.addEdge(gc.g.nodeFromId(i), gc.g.nodeFromId(j));
+            gc.num_edges++;
+        }
+        if (i < conn_rs + ls) {
+            gc.g.addEdge(gc.g.nodeFromId(i), gc.g.nodeFromId(ls + rs));
+            gc.num_edges++;
+        }
+    }
+
+    for (NodeIt n(gc.g); n != INVALID; ++n) {
+        int ec = 0;
+        for (OutArcIt e(gc.g, n); e != INVALID; ++e) {
+            ec++;
+            break;
+        }
+        assert(ec);
+    }
+    
     set<Node> cut;
-    vector<int> indices;
-    for (int i = 0; i < gc.nodes.size(); i++)
-        indices.push_back(i);
-    shuffle(indices.begin(), indices.end(), default_random_engine(0));
-    indices.erase(indices.begin(), indices.begin() + 20);
-    for (auto& i : indices) {
+    for (int i = 0; i < ls + rs; i++) {
         cut.insert(gc.g.nodeFromId(i));
-    }*/
+    }
+    assert(connected(gc.g));
+
+    assert(cut.size() == gc.nodes.size() -1);
+    GraphContext sg;
+    graph_from_cut(gc, sg, cut);
+
+    assert(!connected(sg.g));
+
+    set<Node> new_cut = slow_trimming(gc, config, cut, 1./pow(gc.nodes.size(), 2));
+    GraphContext sg_2;
+    graph_from_cut(gc, sg_2, new_cut);
+    assert(connected(sg_2.g));
+    new_cut = trimming(gc, config, cut, 1./pow(gc.nodes.size(), 2));
+    for (auto& n: new_cut) {
+        cout << gc.g.id(n) << endl;
+    }
+    GraphContext sg_3;
+    graph_from_cut(gc, sg_3, new_cut);
+    assert(connected(sg_3.g));
+    return;
+}
+
+void test_connect_subgraph(GraphContext& gc, Configuration conf, double phi) {
+
+    GraphContext sg;
+    GraphContext sg_slow;
+    GraphContext sg_fast;
+    vector<int> indices;
+    set<Node> cut;
+
+    double ratio_to_remove = 0.01;
+    do {
+        for (int i = 0; i < gc.nodes.size(); i++) {
+            indices.push_back(i);
+        }
+        shuffle(indices.begin(), indices.end(), default_random_engine(random_device()()));
+        indices.erase(indices.begin(), indices.begin() + gc.nodes.size() * ratio_to_remove);
+        for (auto& i : indices) {
+           cut.insert(gc.g.nodeFromId(i));
+        }
+
+        map<Node, Node> dummy;
+        graph_from_cut(gc, sg_slow, cut);
+        graph_from_cut(gc, sg_fast, cut);
+
+        slow_trimming(gc, conf, cut, phi);
+        trimming(gc, conf, cut, phi);
+        ratio_to_remove += 0.01;
+
+        assert(connected(sg_slow.g));
+        assert(connected(sg_fast.g));
+        
+    } while (connected(sg));
+
+    return;
+}
+
+void test_expander(GraphContext& gc, Configuration conf, double phi) {
+
+    //butterfly_test(conf, 10, 10, 2, 2);
+    //butterfly_test(conf, 3, 3, 1, 1);
+    //butterfly_test(conf, 1, 500, 1, 1);
+    //butterfly_test(conf, 20, 500, 2, 1);
+    butterfly_test(conf, 100, 100, 1, 1);
+    butterfly_test(conf, 200, 200, 2, 2);
+    test_connect_subgraph(gc, conf, phi);
 
     double test_phi;
     cm_result cm_res;
@@ -2186,9 +2302,12 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
     }
     cout << "Original h value is (rounded own) " << h << endl;
 
-    if (nodes_to_remove == 0)
+    if (nodes_to_remove == 0) {
+        cout << "h = 0, setting to 5" << endl;
         nodes_to_remove = 5;
-    
+    }
+    cout << "removing n nodes: " << nodes_to_remove << endl;
+
     for (int i = 0; i < gc.nodes.size(); i++)
         indices.push_back(i);
     shuffle(indices.begin(), indices.end(), default_random_engine(random_device()()));
@@ -2201,9 +2320,15 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
     graph_from_cut(gc, gc_nodes_removed, cut);
     vector<set<Node>> cc_ = find_connected_components(gc_nodes_removed);
     cout << "before trimming, graph with nodes removed has n components: " << cc_.size() << endl;
+    cout << "and n nodes:" << gc_nodes_removed.nodes.size() << endl;
+    GraphContext gc_nodes_removed_complement;
+    graph_from_cut(gc, gc_nodes_removed_complement, cut_complement(gc.nodes, cut));
+    cc_ = find_connected_components(gc_nodes_removed_complement);
+    cout << "complement graph with nodes removed has n components: " << cc_.size() << endl;
 
     assert(cut.size() >= gc.nodes.size()/2);
     //Q: for now, just test if we can connect it again
+    /*
     if (true) {
         assert(!connected(gc_nodes_removed.g));
         cout << "Graph with nodes removed is not connected. " << endl;
@@ -2211,18 +2336,27 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
         //Q: we might return a really small (<<< original nodes / 2) cut in one round
         //trim_cut = slow_trimming(gc, conf, trim_cut, cm_res.best_conductance);
         GraphContext slow_trim_gc;
+        GraphContext slow_trim_gc_complement;
         graph_from_cut(gc, slow_trim_gc, trim_cut);
+        graph_from_cut(gc, slow_trim_gc_complement, cut_complement(gc.nodes, trim_cut));
         vector<set<Node>> cc = find_connected_components(slow_trim_gc);
+        cout << "after slow trim, induced subgraph has n components: " << cc.size() << endl;
+        cc = find_connected_components(slow_trim_gc_complement);
         cout << "after slow trim, induced subgraph has n components: " << cc.size() << endl;
         assert (connected(slow_trim_gc.g) && "Slow trimming must yield connected subgraph");
         set<Node> fast_trim_cut = trimming(gc, conf, cut, conf.G_phi_target);
         GraphContext fast_trim_gc;
         graph_from_cut(gc, fast_trim_gc, fast_trim_cut);
         vector<set<Node>> cc_ = find_connected_components(fast_trim_gc);
-        cout << "after fast trim, induced subgraph has n components: " << cc_.size() << endl;
+        cout << "after fast trim, subgraph has n components: " << cc_.size() << endl;
+        GraphContext fast_trim_gc_complement;
+        graph_from_cut(gc, fast_trim_gc, cut_complement(gc.nodes, fast_trim_cut));
+        cc_ = find_connected_components(fast_trim_gc_complement);
+        cout << "after fast trim, COMPLEMENT subgraph has n components: " << cc_.size() << endl;
         assert (connected(fast_trim_gc.g) && "Real trimming must yield connected subgraph");
         cut = fast_trim_cut;
     }
+    */
 
     GraphContext subgraph_possibly_trimmed;
     cm_result cm_res_no_trim;
@@ -2254,7 +2388,17 @@ void expander_test(GraphContext& gc, Configuration conf, double phi) {
     return;
 }
 
+struct decomp_trace {
+    int depth;
+    int size;
+};
 
+struct decomp_stats {
+    int n_decomps;
+    double time_in_cm;
+    double time_in_fl;
+};
+ 
 int main(int argc, char **argv) {
 
     Configuration config = Configuration();
@@ -2284,9 +2428,9 @@ int main(int argc, char **argv) {
     }
 
     //main
-    //expander_test(gc, config, config.G_phi_target);
+    test_expander(gc, config, config.G_phi_target);
 
-    //return 0;
+    return 0;
     vector<map<Node, Node>> cut_maps = decomp(gc, config, map_to_original_graph, node_maps_to_original_graph);
 
     cout << "Done decomp" << endl;
