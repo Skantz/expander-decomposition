@@ -126,6 +126,13 @@ struct GraphContext {
     vector<Node> nodes;
     long num_edges;
     map<Node, int> orig_degree;
+
+    void clear() {
+        g.clear();
+        nodes.clear();
+        num_edges = 0;
+        orig_degree.clear();
+    }
 };
 using GraphContextp = unique_ptr<GraphContext>;
 
@@ -2240,11 +2247,15 @@ void test_connect_subgraph(GraphContext& gc, Configuration conf, double phi) {
     vector<int> indices;
     set<Node> cut;
 
-    double ratio_to_remove = 0.01;
+    for (int i = 0; i < gc.nodes.size(); i++) {
+        indices.push_back(i);
+    }
+
+    //Q: use parameter or set dummy
+    phi = 0.001;
+    double ratio_to_remove = 0.05;
     do {
-        for (int i = 0; i < gc.nodes.size(); i++) {
-            indices.push_back(i);
-        }
+
         shuffle(indices.begin(), indices.end(), default_random_engine(random_device()()));
         indices.erase(indices.begin(), indices.begin() + gc.nodes.size() * ratio_to_remove);
         for (auto& i : indices) {
@@ -2252,17 +2263,28 @@ void test_connect_subgraph(GraphContext& gc, Configuration conf, double phi) {
         }
 
         map<Node, Node> dummy;
-        graph_from_cut(gc, sg_slow, cut);
-        graph_from_cut(gc, sg_fast, cut);
+        assert(gc.nodes.size() >= cut.size() > 0);
 
-        slow_trimming(gc, conf, cut, phi);
-        trimming(gc, conf, cut, phi);
+        set<Node> scut = slow_trimming(gc, conf, cut, phi);
+        set<Node> fcut= trimming(gc, conf, cut, phi);
         ratio_to_remove += 0.01;
+
+        graph_from_cut(gc, sg_slow, scut);
+        graph_from_cut(gc, sg_fast, fcut);
+        assert(sg_slow.num_edges == sg_fast.num_edges > 0);
+        assert(gc.nodes.size() >= sg_slow.nodes.size() > 0);
 
         assert(connected(sg_slow.g));
         assert(connected(sg_fast.g));
-        
-    } while (connected(sg));
+        //Q: clear sg
+        sg_slow.clear();
+        sg_fast.clear();
+        sg.clear();
+        cut.clear();
+
+        graph_from_cut(gc, sg, fcut);
+
+    } while (connected(sg.g));
 
     return;
 }
@@ -2395,8 +2417,10 @@ struct decomp_trace {
 
 struct decomp_stats {
     int n_decomps;
+    int n_trims;
     double time_in_cm;
     double time_in_fl;
+    vector<decomp_trace> traces;
 };
  
 int main(int argc, char **argv) {
