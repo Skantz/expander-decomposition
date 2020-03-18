@@ -2193,7 +2193,7 @@ vector<map<Node, Node>> decomp(
   else
     balanced = false;
 
-  trace.cut_vol_ratio = 1.0 * cut_vol / gc.num_edges;
+  trace.cut_vol_ratio = 1.0 * cut_vol / (2. * gc.num_edges);
 
   if (!cut_is_good) {
     cout << "CASE1 NO Goodenough cut (timeout), G certified expander." << endl;
