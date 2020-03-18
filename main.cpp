@@ -2035,6 +2035,42 @@ bool test_subgraph_expansion(GraphContext &gc, Configuration config,
   return cm_sg.best_conductance >= cm_g.best_conductance * acceptance_ratio;
 }
 
+/*
+  static bool is_crossing(const G &g, const Bisection &c, const Edge &e) {
+    bool u_in = c.count(g.u(e));
+    bool v_in = c.count(g.v(e));
+    return u_in != v_in;
+  }
+
+  static bool any_in_cut(const G &g, const Bisection &c, const Edge &e) {
+    bool u_in = c.count(g.u(e));
+    bool v_in = c.count(g.v(e));
+    return u_in || v_in;
+  }*/
+
+int cut_volume(GraphContext& gc, set<Node> cut) {
+
+    int cut_volume = 0;
+    auto in_cut = [&](const G &g, const set<Node> &c, const Edge &e) {
+      bool u_in = c.count(g.u(e));
+      bool v_in = c.count(g.v(e));
+      return u_in || v_in;   
+    };
+
+    for (EdgeIt e(gc.g); e != INVALID; ++e) {
+      if (cut.count(gc.g.u(e))) cut_volume += 1;
+      if (gc.g.u(e) == gc.g.v(e)) continue;
+      if (cut.count(gc.g.v(e))) cut_volume += 1;
+    }
+
+    cout << "gc.num_edges " << gc.num_edges << " edges and cut volum " << cut_volume << endl;
+
+    assert(cut.size() <= gc.nodes.size());
+    assert(cut_volume <= gc.num_edges * 2);
+    size_t other_size = gc.nodes.size() - cut.size();
+    return cut_volume;
+}
+
 struct decomp_trace {
   int depth = 0;
   int size = 0;
@@ -2051,7 +2087,9 @@ struct decomp_stats {
 vector<map<Node, Node>> decomp(
     GraphContext &gc, Configuration config,
     map<Node, Node> map_to_original_graph,
-    vector<map<Node, Node>> node_maps_to_original_graph, decomp_stats stats) {
+    vector<map<Node, Node>> node_maps_to_original_graph, decomp_stats& stats) {
+  
+  stats.n_decomps += 1;
   int x = 0;
 
   if (gc.nodes.size() == 0) return node_maps_to_original_graph;
@@ -2118,31 +2156,43 @@ vector<map<Node, Node>> decomp(
   stats.time_in_cm += duration_sec(start, stop);
   stats.n_decomps += 1;
 
+  bool balanced = false;
+  bool cut_is_good = false;
   set<Node> cut;
+
   //(cm_res.reached_H_target == true && cm_res.best_relatively_balanced)? cut =
   // cm_res.best_cut : cut = cm_res.last_cut;
 
   cut = cm_res.best_cut;
+  /*
   !(cm_res.reached_H_target) && cm_res.best_relatively_balanced
       ? cut = cm_res.last_cut
       : cut = cm_res.best_cut;
-  // WARNING - cut is small size now, at least Trimming should not work.
-  //
+  */
+
+  if (cm_res.best_relatively_balanced) {
+    balanced = true;
+  }
+  if (cm_res.best_conductance < config.G_phi_target ) {
+    cut_is_good = true;
+  }
 
   // Q: should be an improvement. But this will affect balance. re-calculate?
   cut = connected_component_from_cut(gc, cut);
+  int cut_vol = cut_volume(gc, cut);
 
-  if (cut.size() == 0 || cut.size() == gc.nodes.size() ||
-      (cm_res.best_conductance >= config.G_phi_target &&
-       cm_res.reached_H_target)) {
+  if (cut_vol > config.h_ratio * gc.num_edges)
+    balanced = true;
+  else
+    balanced = false;
+
+  if (!cut_is_good) {
     cout << "CASE1 NO Goodenough cut (timeout), G certified expander." << endl;
     node_maps_to_original_graph.push_back(map_to_original_graph);
   }
 
   // break early due to balanced and good cut
-
-  else if (cm_res.best_conductance < config.G_phi_target &&
-           cm_res.best_relatively_balanced) {
+  else if (cut_is_good && balanced) {
     assert(cut.size() > 0 != gc.nodes.size());
     //        //private(A, new_map, empty_map, decomp_map)
     // int t = omp_get_max_threads();
@@ -2173,11 +2223,8 @@ vector<map<Node, Node>> decomp(
   }
 
   // check best cut found so far
-  else if (!(cm_res.best_relatively_balanced) &&
-           cm_res.best_conductance < config.G_phi_target) {
-    // assert (cm.reached_H_target);
-    // ListDigraph dg_;
-    // digraph_from_graph(gc.g, dg_);
+  else if (!balanced && cut_is_good) {
+
     assert(cut.size() != 0);
 
     if (cut.size() < gc.nodes.size() / 2) {
@@ -2217,7 +2264,6 @@ vector<map<Node, Node>> decomp(
     bool sg_is_expander = test_subgraph_expansion(gc, config, real_trim_cut,
                                                   PHI_ACCEPTANCE_TRIMMING);
     assert(sg_is_expander);
-    // Q: should hold? Why is this off by one?
     assert(A.nodes.size() + V_over_A.nodes.size() == gc.nodes.size());
     assert(V_over_A.nodes.size() > 0);
     node_maps_to_original_graph.push_back(A_map);
@@ -2517,9 +2563,10 @@ int main(int argc, char **argv) {
 
   cout << "Done decomp" << endl;
 
-  cout << "time in cm: " << stats.time_in_cm;
-  cout << "time in fl: " << stats.time_in_fl;
-  cout << "n local flows:" << stats.n_trims;
+  cout << "time in cm: " << stats.time_in_cm << endl;
+  cout << "time in fl: " << stats.time_in_fl << endl;
+  cout << "n local flows:" << stats.n_trims  << endl;
+  cout << "n decomps" << stats.n_trims << endl;
 
   vector<int> all_nodes;
 
