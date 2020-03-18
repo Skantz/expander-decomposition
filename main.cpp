@@ -1940,6 +1940,8 @@ struct cm_result {
   bool reached_H_target;
   bool best_relatively_balanced;
   bool last_relatively_balanced;
+  double best_volume_ratio;
+  double last_volume_ratio;
 };
 
 void run_cut_matching(GraphContext &gc, Configuration &config,
@@ -2004,7 +2006,8 @@ void run_cut_matching(GraphContext &gc, Configuration &config,
   cm_res.reached_H_target = cm.reached_H_target;
   cm_res.best_relatively_balanced = best_round->relatively_balanced;
   cm_res.last_relatively_balanced = last_round->relatively_balanced;
-
+  cm_res.best_volume_ratio = best_round->volume;
+  cm_res.last_volume_ratio = best_round->volume;
   return;
 }
 
@@ -2074,6 +2077,7 @@ int cut_volume(GraphContext& gc, set<Node> cut) {
 struct decomp_trace {
   int depth = 0;
   int size = 0;
+  double cut_vol_ratio;
 };
 
 struct decomp_stats {
@@ -2087,8 +2091,11 @@ struct decomp_stats {
 vector<map<Node, Node>> decomp(
     GraphContext &gc, Configuration config,
     map<Node, Node> map_to_original_graph,
-    vector<map<Node, Node>> node_maps_to_original_graph, decomp_stats& stats) {
+    vector<map<Node, Node>> node_maps_to_original_graph,
+    decomp_stats& stats, decomp_trace trace) {
   
+  trace.depth += 1;
+  trace.size  =  gc.nodes.size();
   stats.n_decomps += 1;
   int x = 0;
 
@@ -2114,7 +2121,7 @@ vector<map<Node, Node>> decomp(
           graph_from_cut(gc, sg, sg_cut, map_to_original_graph);
       vector<map<Node, Node>> decomp_map;
       vector<map<Node, Node>> empty_map;
-      decomp_map = decomp(sg, config, comp_map, empty_map, stats);
+      decomp_map = decomp(sg, config, comp_map, empty_map, stats, trace);
       //~sg.g();
       node_maps_to_original_graph.insert(node_maps_to_original_graph.end(),
                                          decomp_map.begin(), decomp_map.end());
@@ -2186,6 +2193,8 @@ vector<map<Node, Node>> decomp(
   else
     balanced = false;
 
+  trace.cut_vol_ratio = 1.0 * cut_vol / gc.num_edges;
+
   if (!cut_is_good) {
     cout << "CASE1 NO Goodenough cut (timeout), G certified expander." << endl;
     node_maps_to_original_graph.push_back(map_to_original_graph);
@@ -2195,7 +2204,7 @@ vector<map<Node, Node>> decomp(
   else if (cut_is_good && balanced) {
     assert(cut.size() > 0 != gc.nodes.size());
     //        //private(A, new_map, empty_map, decomp_map)
-    // int t = omp_get_max_threads();
+    // int t = omp_get_max_threads();vol_ratio
     int t = 4;
     omp_set_nested(1);
     omp_set_num_threads(4);
@@ -2215,7 +2224,7 @@ vector<map<Node, Node>> decomp(
 
       vector<map<Node, Node>> empty_map;
       vector<map<Node, Node>> decomp_map =
-          decomp(A, config, new_map, empty_map, stats);
+          decomp(A, config, new_map, empty_map, stats, trace);
 #pragma omp critical
       node_maps_to_original_graph.insert(node_maps_to_original_graph.end(),
                                          decomp_map.begin(), decomp_map.end());
@@ -2270,7 +2279,7 @@ vector<map<Node, Node>> decomp(
     vector<map<Node, Node>> empty_map;
     vector<map<Node, Node>> cuts_empty_map;
     vector<map<Node, Node>> decomp_map =
-        decomp(V_over_A, config, R_map, cuts_empty_map, stats);
+        decomp(V_over_A, config, R_map, cuts_empty_map, stats, trace);
     node_maps_to_original_graph.insert(node_maps_to_original_graph.end(),
                                        decomp_map.begin(), decomp_map.end());
   }
@@ -2280,7 +2289,7 @@ vector<map<Node, Node>> decomp(
     node_maps_to_original_graph.push_back(map_to_original_graph);
     assert(false);
   }
-
+  stats.traces.push_back(trace);
   return node_maps_to_original_graph;
 }
 
@@ -2558,8 +2567,10 @@ int main(int argc, char **argv) {
   // test_expander(gc, config, config.G_phi_target);
 
   decomp_stats stats;
+  decomp_trace trace;
   vector<map<Node, Node>> cut_maps = decomp(gc, config, map_to_original_graph,
-                                            node_maps_to_original_graph, stats);
+                                            node_maps_to_original_graph, stats,
+                                            trace);
 
   cout << "Done decomp" << endl;
 
@@ -2567,6 +2578,9 @@ int main(int argc, char **argv) {
   cout << "time in fl: " << stats.time_in_fl << endl;
   cout << "n local flows:" << stats.n_trims  << endl;
   cout << "n decomps" << stats.n_trims << endl;
+  for (auto& t: stats.traces) {
+    cout << "vol r: " << t.cut_vol_ratio << " d: " << t.depth << endl;
+  }
 
   vector<int> all_nodes;
 
