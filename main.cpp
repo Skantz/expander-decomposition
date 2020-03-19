@@ -1856,25 +1856,34 @@ set<Node> connected_component_from_cut(GraphContext &gc_orig, set<Node> A) {
   //    return lhs.size() < rhs.size();
   //}
   cout << "orig graph: n: " << gc_orig.nodes.size() << endl;
-  while (components_A.size() > 1 || components_R.size() > 1) {
+
+  //auto comp = [](int x, int y){ return x < y; };
+  //auto set_comp ()(set<Node> &a, set<Node> &b ) { return a.size() < b.size(); };
+  auto comp = [] (set<Node> &a, set<Node> &b) -> bool { return a.size() < b.size(); };
+
+  while (components_A.size() > 1 || components_R.size() >  1) {
     cout << "components not connected: n components in A: "
          << components_A.size() << " n in R: " << components_R.size() << endl;
 
     if (components_A.size() > 1) {
-      for (auto c = components_A.begin() + 1; c != components_A.end(); c++) {
+      for (auto c = components_A.begin() ; c != components_A.end(); c++) {
         // R.insert((*c).begin(), (*c).end());
+        if (c == std::max_element(components_A.begin(), components_A.end(), comp)) { continue; }
         for (auto &n : *c) R.insert(A_to_orig[n]);
       }
       A.clear();
-      for (auto &n : *components_A.begin()) A.insert(A_to_orig[n]);
-      // A = *components_A.begin();
+      for (auto &n : *std::max_element(components_A.begin(), components_A.end(), comp)) A.insert(A_to_orig[n]);
+
+
     } else if (components_R.size() > 1) {
-      for (auto c = components_R.begin() + 1; c != components_R.end(); c++) {
+      for (auto c = components_R.begin() ; c != components_R.end(); c++) {
+        if (c == std::max_element(components_R.begin(), components_R.end(), comp)) { continue; }
         for (auto &n : *c) A.insert(R_to_orig[n]);
       }
       R.clear();
-      for (auto &n : *components_R.begin()) R.insert(R_to_orig[n]);
+      for (auto &n : *std::max_element(components_R.begin(), components_R.end(), comp)) R.insert(R_to_orig[n]);
     }
+
     assert(A.size() + R.size() == gc_orig.nodes.size());
     GraphContext A_sg_, R_sg_;
     A_to_orig = graph_from_cut(gc_orig, A_sg_, A, gc_to_gc);
@@ -2082,6 +2091,7 @@ struct decomp_trace {
 
 struct decomp_stats {
   int n_decomps = 0;
+  int n_cm = 0;
   int n_trims = 0;
   double time_in_cm = 0.;
   double time_in_fl = 0.;
@@ -2097,6 +2107,7 @@ vector<map<Node, Node>> decomp(
   trace.depth += 1;
   trace.size  =  gc.nodes.size();
   stats.n_decomps += 1;
+  cout << "####" << stats.n_decomps << endl;
   int x = 0;
 
   if (gc.nodes.size() == 0) return node_maps_to_original_graph;
@@ -2161,7 +2172,7 @@ vector<map<Node, Node>> decomp(
   run_cut_matching(gc, config, cm_res);
   auto stop = now();
   stats.time_in_cm += duration_sec(start, stop);
-  stats.n_decomps += 1;
+  stats.n_cm += 1;
 
   bool balanced = false;
   bool cut_is_good = false;
@@ -2188,12 +2199,21 @@ vector<map<Node, Node>> decomp(
   cut = connected_component_from_cut(gc, cut);
   int cut_vol = cut_volume(gc, cut);
 
-  if (cut_vol > config.h_ratio * gc.num_edges)
+  double h = double(gc.num_edges) /
+             (10 * config.volume_treshold_factor * pow(log2(gc.num_edges), 2));
+
+  if ((1. - config.h_ratio) * gc.num_edges >= cut_vol / 2 && cut_vol / 2 >= config.h_ratio * gc.num_edges) {
     balanced = true;
-  else
+  }
+  else if (config.h_ratio == 0 && gc.num_edges - h >= cut_vol / 2 && cut_vol / 2 >= h) {
+    balanced = true;
+  } else {
     balanced = false;
+  }
 
   trace.cut_vol_ratio = 1.0 * cut_vol / (2. * gc.num_edges);
+  cout << "cut vol: " << cut_vol <<  " gc num edges " << gc.num_edges << " balanced?: " << balanced << ": " << endl;
+  cout << "h ratio " << config.h_ratio << " " << " h: " << h << endl;
 
   if (!cut_is_good) {
     cout << "CASE1 NO Goodenough cut (timeout), G certified expander." << endl;
@@ -2573,13 +2593,17 @@ int main(int argc, char **argv) {
                                             trace);
 
   cout << "Done decomp" << endl;
-
-  cout << "time in cm: " << stats.time_in_cm << endl;
-  cout << "time in fl: " << stats.time_in_fl << endl;
-  cout << "n local flows:" << stats.n_trims  << endl;
-  cout << "n decomps" << stats.n_trims << endl;
+  cout << "output:" << endl;
+  cout << "g_phi target;" << config.G_phi_target << endl;
+  cout << "h_phi target;" << config.H_phi_target << endl;
+  cout << "unbalance threshold;" << config.h_ratio << endl;
+  cout << "time in cm;" << stats.time_in_cm << endl;
+  cout << "time in fl;" << stats.time_in_fl << endl;
+  cout << "n local flows;" << stats.n_trims  << endl;
+  cout << "n cut matches;" << stats.n_cm << endl;
+  cout << "n decomps;" << stats.n_decomps << endl;
   for (auto& t: stats.traces) {
-    cout << "vol r: " << t.cut_vol_ratio << " d: " << t.depth << endl;
+    cout << "vol cut/vol graph ratio;" << t.cut_vol_ratio << ";" << t.depth << endl;
   }
 
   vector<int> all_nodes;
@@ -2622,17 +2646,16 @@ int main(int argc, char **argv) {
         }
       }
     }
-    cout << edges_inside_cluster << " ; " << all_edges << endl;
+    cout << "edges inside cluster/total cluster edges;" << edges_inside_cluster << ";" << all_edges << endl;
     node_ratio_edges_inside.push_back((double)edges_inside_cluster /
                                       (double)all_edges);
   }
 
-  cout << "output:" << endl;
-  for (const auto &r : node_ratio_edges_inside) cout << r << endl;
 
-  cout << "singletons: " << n_singletons;
+  for (const auto &r : node_ratio_edges_inside) cout << "inside cluster vol/total vol cluster;" <<  r << endl;
 
-  cout << "All nodes included correctly" << endl;
+  cout << "n singletons;" << n_singletons << endl;
+
   cout << "output end" << endl;
 
   ofstream file;
