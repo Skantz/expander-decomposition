@@ -354,6 +354,7 @@ void write_cut(const vector<Node> &nodes, const Cut &cut, string file_name) {
   file.close();
 }
 
+
 void read_partition_file(const string &filename, const vector<Node> &nodes,
                          Cut &partition) {
   ifstream file;
@@ -2594,16 +2595,12 @@ int main(int argc, char **argv) {
 
   cout << "Done decomp" << endl;
   cout << "output:" << endl;
-  cout << "g_phi target;" << config.G_phi_target << endl;
-  cout << "h_phi target;" << config.H_phi_target << endl;
-  cout << "unbalance threshold;" << config.h_ratio << endl;
-  cout << "time in cm;" << stats.time_in_cm << endl;
-  cout << "time in fl;" << stats.time_in_fl << endl;
-  cout << "n local flows;" << stats.n_trims  << endl;
-  cout << "n cut matches;" << stats.n_cm << endl;
-  cout << "n decomps;" << stats.n_decomps << endl;
+
   for (auto& t: stats.traces) {
-    cout << "vol cut/vol graph ratio;" << t.cut_vol_ratio << ";" << t.depth << endl;
+    cout << "vol cut/vol graph ratio;" << t.cut_vol_ratio;
+  }
+  for (auto& t: stats.traces) {
+    cout << "decomp depth;" << t.depth << endl;
   }
 
   vector<int> all_nodes;
@@ -2655,6 +2652,25 @@ int main(int argc, char **argv) {
   for (const auto &r : node_ratio_edges_inside) cout << "inside cluster vol/total vol cluster;" <<  r << endl;
 
   cout << "n singletons;" << n_singletons << endl;
+
+  int i = 0;
+  for (auto& c: cuts_node_vector) {
+    cout << "cluster " << i <<";";
+    for (auto& n: c) {
+        cout << gc.g.id(n) << ";";
+    }
+    cout << endl;
+    i++;
+  }
+
+  cout << "g_phi target;" << config.G_phi_target << endl;
+  cout << "h_phi target;" << config.H_phi_target << endl;
+  cout << "unbalance threshold;" << config.h_ratio << endl;
+  cout << "time in cm;" << stats.time_in_cm << endl;
+  cout << "time in fl;" << stats.time_in_fl << endl;
+  cout << "n local flows;" << stats.n_trims  << endl;
+  cout << "n cut matches;" << stats.n_cm << endl;
+  cout << "n decomps;" << stats.n_decomps << endl;
 
   cout << "output end" << endl;
 
