@@ -63,10 +63,14 @@ using Cut = set<Node>;
 using Cutp = unique_ptr<Cut>;
 using CutMap = NodeMap<bool>;
 
+#define MAX_PARALLEL_RECURSIVE_LEVEL 10
+
+const int NUM_THREADS = 4;
 const double MICROSECS = 1000000.0;
 const double PHI_UNREACHABLE = 0.00000001;
 const double PHI_ACCEPTANCE_TRIMMING = 0.166;
 const auto& now = high_resolution_clock::now;
+
 double
 duration_sec(const high_resolution_clock::time_point& start,
              high_resolution_clock::time_point& stop)
@@ -1009,9 +1013,11 @@ struct CutMatching {
         // report->g_expansion = cs.expansion();
         // l.progress() << "SUBG cut expansion " << report->g_expansion << endl;
         report->g_conductance = cs.conductance();
+        /*
         if (report->g_conductance == 1) {
             cout << "LYING" << endl;
         }
+        */
         l.progress() << "SUBG cut conductance: " << report->g_conductance
                      << endl;
         report->volume = cs.minside_volume();
@@ -1467,15 +1473,13 @@ void
 adjust_flow_source(DG& dg, flow_instance& fp, set<DGNode> trimmed_nodes)
 {
     assert(trimmed_nodes.size() <= fp.R.size());
-    bool node_is_active;
     for (auto& n : trimmed_nodes) {
         assert(!fp.A.count(n));
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
             assert(!fp.A.count(n));
             if (fp.A.count(dg.target(e))) {
-                DGNode v = dg.target(e);
-                // fp.node_flow[v] += 2.0/fp.phi - fp.edge_flow[e];
-                fp.initial_mass[v] += 2.0 / fp.phi - fp.edge_flow[e];
+                fp.node_flow[dg.target(e)] += 2.0/fp.phi - fp.edge_flow[e];
+                fp.initial_mass[dg.target(e)] += 2.0 / fp.phi - fp.edge_flow[e];
                 // Q: should not be relevant
                 // fp.edge_flow[fp.reverse_arc[e]] -= 2/fp.phi;
             }
@@ -1488,7 +1492,7 @@ void
 uf(DG& dg, flow_instance& fp)
 {
     bool excess_flow;
-    assert(fp.A.size() > 0 && fp.R.size() > 0 && fp.A.size() > fp.R.size());
+    assert(fp.A.size() > 0 && fp.R.size() > 0 && fp.A.size() >= fp.R.size());
     // Set up level queues
     vector<list<DGNode>> level_queue;
     for (int i = 0; i < fp.h; i++) {
@@ -1502,7 +1506,6 @@ unit_setup:
         level_queue.push_back(list<DGNode>());
     }
 
-    // Q: fp.A.size()/2 cus we are trimming, too...
     for (int i = 0; i < fp.h && i < fp.A.size(); i++) {
         level_queue[i].clear();
         assert(level_queue[i].size() == 0);
@@ -1515,12 +1518,18 @@ unit_setup:
 
     cout << "local flow: start unit flow" << endl;
 
+    if (fp.h < level_queue.size())
+        fp.h = level_queue.size();
+    
 unit_start:
+    assert(level_queue.size() <= fp.h);
     int cut_size_before = fp.A.size();
     while (fp.active_nodes.size() > 0) {
         int lowest_label = fp.h;
         DGNode n;
+        //Q: make priority queue
         for (auto& n_ : fp.active_nodes) {
+            assert (fp.node_label[n_] < fp.h);
             if (fp.node_label[n_] < lowest_label) {
                 lowest_label = fp.node_label[n_];
                 n = n_;
@@ -1530,6 +1539,7 @@ unit_start:
         assert(fp.node_flow[n] > 0);
         assert(fp.node_label[n] < fp.h - 1);
         assert(fp.node_flow[n] > fp.node_cap[n]);  // push-relabel
+        assert(fp.h >= level_queue.size());
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
             if (dg.source(e) == dg.target(e))
                 continue;
@@ -1557,15 +1567,20 @@ unit_start:
                 assert(n != dg.target(e));
                 fp.edge_flow[e] += phi;
                 fp.edge_flow[fp.reverse_arc[e]] -= phi;
-                if (fp.node_flow[n] -
-                        min(fp.node_flow[n], fp.initial_mass[n]) <=
-                    fp.node_cap[n])
-                    fp.active_nodes.erase(n);
-                if (fp.node_flow[dg.target(e)] -
-                            min(fp.node_flow[n], fp.initial_mass[n]) >
-                        fp.node_cap[dg.target(e)] &&
+                //Q: is inactive or active and was not before
+                if (fp.node_flow[n] <=
+                    fp.node_cap[n] &&
+                    fp.node_flow[n] + phi >
+                    fp.node_cap[n]) {
+                    assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
+                                n) != fp.active_nodes.end());
+                    fp.active_nodes.erase(n);   
+                }
+                if (fp.node_flow[dg.target(e)] >
+                    fp.node_cap[dg.target(e)] &&
                     fp.node_flow[dg.target(e)] - phi <=
-                        fp.node_cap[dg.target(e)]) {
+                    fp.node_cap[dg.target(e)] && 
+                    fp.node_label[dg.target(e)] < fp.h -1) {
                     assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
                                 dg.target(e)) == fp.active_nodes.end());
                     fp.active_nodes.insert(dg.target(e));
@@ -1576,6 +1591,7 @@ unit_start:
 
         // relabel
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
+            //Q: wasteful check
             if (n == dg.target(e) || !fp.A.count(dg.target(e)))
                 continue;
             assert(n == dg.source(e));
@@ -1595,8 +1611,8 @@ unit_start:
         assert(find(level_queue[lv].begin(), level_queue[lv].end(), n) !=
                level_queue[lv].end());
         int c1 = level_queue[lv + 1].size();
-        int c2 = level_queue[lv].size();
         level_queue[lv + 1].push_back(n);
+        int c2 = level_queue[lv].size();
         level_queue[lv].remove(n);
         fp.node_label[n] = fp.node_label[n] + 1;
         assert(level_queue[lv + 1].size() == c1 + 1);
@@ -1620,19 +1636,19 @@ unit_start:
 
     fp.active_nodes.clear();
     for (auto& n : fp.A) {
-        if (fp.node_flow[n] - min(fp.node_flow[n], fp.initial_mass[n]) >
-                fp.node_cap[n] &&
+        if (fp.node_flow[n] >
+            fp.node_cap[n] &&
             fp.node_label[n] < fp.h - 1)
             fp.active_nodes.insert(n);
     }
 
-    fp.h = fp.A.size();
+    //fp.h = fp.A.size();
 
     goto unit_start;
 
     for (auto& n : fp.A)
-        assert(fp.node_flow[n] <= fp.node_cap[n] ||
-               fp.node_flow[n] >= fp.h - 1);
+        assert(fp.node_flow[n] <= fp.node_cap[n]); //||
+               //fp.node_flow[n] >= fp.h - 1);
 
     return;
 }
@@ -1803,13 +1819,8 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
             if (!R.count(dg.target(e))) {
                 fp.edge_cap[e] = 2. / phi;
-                // fp.initial_mass[n] += 2./phi;
                 fp.node_flow[n] -= 2. / phi;
-                // Flow is sourced "from edges" Q: Is this right? Remove edge
-                // flow/doesn't matter?
                 fp.edge_flow[e] = 2. / phi;
-                // fp.node_flow[dg.target(e)] += 2.0/phi;
-                // fp.initial_mass[dg.target(e)] += 2./phi;
                 fp.node_flow[dg.target(e)] += 2. / phi;
                 fp.edge_flow[fp.reverse_arc[e]] = -2. / phi;
             }
@@ -2490,10 +2501,10 @@ decomp(GraphContext& gc, Configuration config,
         assert(cut.size() > 0 != gc.nodes.size());
         //        //private(A, new_map, empty_map, decomp_map)
         // int t = omp_get_max_threads();vol_ratio
-        int t = 4;
-        omp_set_nested(1);
-        omp_set_num_threads(4);
+
 // omp_set_max_active_levels
+
+        int t = NUM_THREADS;
 #pragma omp parallel for num_threads(t) schedule(dynamic, 1)
         for (int i = 0; i < 2; i++) {
             int thread_num = omp_get_thread_num();
@@ -2557,6 +2568,8 @@ decomp(GraphContext& gc, Configuration config,
                                                map_to_original_graph, false);
         bool sg_is_expander = test_subgraph_expansion(gc, config, real_trim_cut,
                                                       PHI_ACCEPTANCE_TRIMMING);
+
+        assert("Subgraph must be connected after trim" && connected(A.g));
         assert(sg_is_expander);
         assert(A.nodes.size() + V_over_A.nodes.size() == gc.nodes.size());
         assert(V_over_A.nodes.size() > 0);
@@ -2663,9 +2676,9 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     // Q: use parameter or set dummy
     cm_result cm_res;
     run_cut_matching(gc, conf, cm_res);
-    phi = cm_res.best_conductance * 0.1;  // strong
+    phi = cm_res.best_conductance * 0.3;  // strong
 
-    double ratio_to_remove = 0.01;
+    double ratio_to_remove = 1./gc.nodes.size();
 
     do {
         sg.clear();
@@ -2675,6 +2688,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
                 default_random_engine(random_device()()));
         indices.erase(indices.begin(),
                       indices.begin() + gc.nodes.size() * ratio_to_remove);
+
         for (auto& i : indices) {
             cut.insert(gc.g.nodeFromId(i));
         }
@@ -2682,12 +2696,18 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
         assert(gc.nodes.size() >= cut.size() > 0);
 
         graph_from_cut(gc, sg, cut);
-        ratio_to_remove += 0.001;
+        if (cut.size() < gc.nodes.size() / 2)
+            ratio_to_remove += 0.001;
+        else
+            break;
+        
 
     } while (connected(sg.g));
 
     phi = 1. / (gc.num_edges);
 
+    cout << "nodes orig" << gc.nodes.size() << endl;
+    cout << "nodes cut" << cut.size() << endl;
     set<Node> scut = slow_trimming(gc, conf, cut, phi);
     set<Node> scut2 = slow_trimming(gc, conf, scut, phi);
     set<Node> fcut = trimming(gc, conf, cut, phi);
@@ -2697,6 +2717,8 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     // assert(sg_slow.num_edges == sg_fast.num_edges > 0);
     // assert(gc.nodes.size() >= sg_slow.nodes.size() > 0);
 
+    cout << "connected slow?" << connected(sg_slow.g) << endl;
+    cout << "connected fast?" << connected(sg_fast.g) << endl;
     assert(connected(sg_slow.g));
     assert(connected(sg_fast.g));
     // Q: clear sg
@@ -2721,6 +2743,7 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
     // butterfly_test(conf, 100, 100, 1, 1);
     // butterfly_test(conf, 200, 200, 2, 2);
     test_connect_subgraph(gc, conf, phi);
+    return;
 
     double test_phi;
     cm_result cm_res;
@@ -2886,6 +2909,10 @@ nodes_to_remove) {
 int
 main(int argc, char** argv)
 {
+
+    omp_set_nested(1);
+    omp_set_num_threads(NUM_THREADS);
+
     Configuration config = Configuration();
     parse_options(argc, argv, config);
 
@@ -2916,8 +2943,8 @@ main(int argc, char** argv)
     }
 
     // main
-    test_expander(gc, config, config.G_phi_target);
-    return 0;
+    //test_expander(gc, config, config.G_phi_target);
+    //return 0;
 
     decomp_stats stats;
     decomp_trace trace;
@@ -2928,17 +2955,6 @@ main(int argc, char** argv)
     cout << "Done decomp" << endl;
     cout << "output:" << endl;
 
-    cout << "graph;" << config.input.file_name << endl;
-    cout << "nodes;" << gc.nodes.size() << endl;
-    cout << "edges;" << gc.num_edges << endl;
-    cout << "g_phi target;" << config.G_phi_target << endl;
-    cout << "h_phi target;" << config.H_phi_target << endl;
-    cout << "unbalance threshold;" << config.h_ratio << endl;
-    cout << "time in cm;" << stats.time_in_cm << endl;
-    cout << "time in fl;" << stats.time_in_fl << endl;
-    cout << "n local flows;" << stats.n_trims << endl;
-    cout << "n cut matches;" << stats.n_cm << endl;
-    cout << "n decomps;" << stats.n_decomps << endl;
 
     for (auto& t : stats.traces) {
         cout << "vol cut/vol graph ratio;" << t.cut_vol_ratio << endl;
@@ -2998,7 +3014,7 @@ main(int argc, char** argv)
     for (const auto& r : node_ratio_edges_inside)
         cout << "inside cluster vol/total vol cluster;" << r << endl;
 
-    cout << "n singletons;" << n_singletons << endl;
+
 
     int i = 0;
     for (auto& c : cuts_node_vector) {
@@ -3010,6 +3026,19 @@ main(int argc, char** argv)
         i++;
     }
 
+
+    cout << "graph;" << config.input.file_name << endl;
+    cout << "nodes;" << gc.nodes.size() << endl;
+    cout << "edges;" << gc.num_edges << endl;
+    cout << "g_phi target;" << config.G_phi_target << endl;
+    cout << "h_phi target;" << config.H_phi_target << endl;
+    cout << "unbalance threshold;" << config.h_ratio << endl;
+    cout << "time in cm;" << stats.time_in_cm << endl;
+    cout << "time in fl;" << stats.time_in_fl << endl;
+    cout << "n local flows;" << stats.n_trims << endl;
+    cout << "n cut matches;" << stats.n_cm << endl;
+    cout << "n decomps;" << stats.n_decomps << endl;
+    cout << "n singletons;" << n_singletons << endl;
     cout << "output end" << endl;
 
     ofstream file;
