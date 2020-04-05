@@ -2736,17 +2736,8 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
 void
 test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_target)
 {
-    GraphContext sg;
-    GraphContext sg_slow;
-    GraphContext sg_fast;
-    vector<int> indices;
-    set<Node> cut;
 
     conf.G_phi_target = PHI_UNREACHABLE;
-
-    for (int i = 0; i < gc.nodes.size(); i++) {
-        indices.push_back(i);
-    }
 
     // Q: use parameter or set dummy
     cm_result cm_res;
@@ -2756,9 +2747,22 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
 
     double phi_thres = phi;
 
-    do {
+    set<Node> non_expander_cut;
+
+    bool break_var = false;
+    int some_big_int = 100000;
+    //Should parallelize the function call, instead.
+#pragma omp parallel for  num_threads(NUM_THREADS) schedule(dynamic, 1)
+    for (int i = 0; i < some_big_int; i += 1) {
+        GraphContext sg;
+        set<Node> cut;
         sg.clear();
         cut.clear();
+
+        vector<int> indices;
+        for (int i = 0; i < gc.nodes.size(); i++) {
+            indices.push_back(i);
+        }
 
         shuffle(indices.begin(), indices.end(),
                 default_random_engine(random_device()()));
@@ -2780,8 +2784,18 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
         run_cut_matching(sg, conf, cm_res);
         phi = cm_res.best_conductance;
 
-    } while (phi_thres >= phi * phi_ratio_target);
+        i = 0;
+        if (phi_thres * phi_ratio_target > phi)
+            break_var = true;
+            non_expander_cut = cut;
+        
+        if (!break_var)
+            continue;
+    }
 
+#pragma omp taskwait
+
+    set<Node> cut = non_expander_cut;
     for (auto& n : cut) {
         cout << gc.g.id(n) << " ";
     }
@@ -2789,10 +2803,12 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
 
     cout << "nodes orig" << gc.nodes.size() << endl;
     cout << "nodes cut" << cut.size() << endl;
-    set<Node> scut = slow_trimming(gc, conf, cut, phi);
+    set<Node> scut  = slow_trimming(gc, conf, cut, phi);
     set<Node> scut2 = slow_trimming(gc, conf, scut, phi);
-    set<Node> fcut = trimming(gc, conf, cut, phi);
+    set<Node> fcut  = trimming(gc, conf, cut, phi);
 
+    GraphContext sg_slow;
+    GraphContext sg_fast;
     graph_from_cut(gc, sg_slow, scut2);
     graph_from_cut(gc, sg_fast, fcut);
     // assert(sg_slow.num_edges == sg_fast.num_edges > 0);
