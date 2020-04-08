@@ -572,9 +572,7 @@ struct CutMatching {
         : config(config_), gc(gc), sgc{gc}, random_engine(random_engine_)
     {
         assert(gc.nodes.size() % 2 == 0);
-        assert(gc.nodes.size() > 0);
-        cout << "what's going on here n: " << gc.nodes.size()
-             << " e: " << gc.num_edges << endl;
+        assert(gc.nodes.size() > 0) ;
         assert(connected(gc.g));
 
         createSubdividedGraph(sgc);
@@ -1364,14 +1362,6 @@ level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue)
     int n_upper_nodes = 0;
     cout << "local flow: start level cut" << endl;
 
-    int i = cut_index + 2;
-    for (auto& q : level_queue) {
-        i--;
-        if (q.size() > 0)
-            cout << "local flow: level queue at level: " << i
-                 << " has size: " << q.size() << endl;
-    }
-
     for (int i = level_queue.size() - 1; i > 0; i--) {
         cut_index = i;
         // Q: ? Assert false?
@@ -1416,6 +1406,7 @@ level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue)
          << endl;
     cout << "local flow: cut index is: " << cut_index
          << " A size: " << fp.A.size() << endl;
+    //q: why?
     assert(cut_index > 0);
     trimmed_nodes.clear();
 
@@ -1438,19 +1429,6 @@ level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue)
             level_queue[i].clear();
         }
     }
-    /*
-    else if (n_upper_nodes >= fp.A.size()/2) {
-        cout << "local flow: cut on lower side" << endl;
-        for (int i = cut_index - 1; i >= 0; i--) {
-            for (auto& n: level_queue[i]) {
-                assert(fp.R.count(n) == 0 && trimmed_nodes.count(n) == 0);
-                fp.R.insert(n);
-                trimmed_nodes.insert(n);
-            }
-            level_queue[i].clear();
-        }
-    }
-    */
 
     int old_A = fp.A.size();
     fp.A.clear();
@@ -1478,8 +1456,9 @@ adjust_flow_source(DG& dg, flow_instance& fp, set<DGNode> trimmed_nodes)
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
             assert(!fp.A.count(n));
             if (fp.A.count(dg.target(e))) {
-                fp.node_flow[dg.target(e)] += 2.0/fp.phi - fp.edge_flow[e];
-                fp.initial_mass[dg.target(e)] += 2.0 / fp.phi - fp.edge_flow[e];
+                //Q: 2.0/fp.phi? - fp.edge_flow[e] ?
+                fp.node_flow[dg.target(e)] += 2.0/fp.phi; // - fp.edge_flow[e];
+                fp.initial_mass[dg.target(e)] += 2.0 / fp.phi; //- fp.edge_flow[e];
                 // Q: should not be relevant
                 // fp.edge_flow[fp.reverse_arc[e]] -= 2/fp.phi;
             }
@@ -1521,6 +1500,7 @@ unit_setup:
     if (fp.h < level_queue.size())
         fp.h = level_queue.size();
     
+    double pushed_flow = 0.0;
 unit_start:
     assert(level_queue.size() <= fp.h);
     int cut_size_before = fp.A.size();
@@ -1540,6 +1520,7 @@ unit_start:
         assert(fp.node_label[n] < fp.h - 1);
         assert(fp.node_flow[n] > fp.node_cap[n]);  // push-relabel
         assert(fp.h >= level_queue.size());
+
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
             if (dg.source(e) == dg.target(e))
                 continue;
@@ -1553,9 +1534,12 @@ unit_start:
                 assert(fp.edge_flow[e] >= 2. / fp.phi);
 
             if (fp.node_label[n] - fp.node_label[(dg.target(e))] == 1 &&
-                fp.edge_cap[e] - fp.edge_flow[e] > 0) {  // push
-                assert(fp.node_flow[dg.target(e)] - fp.node_cap[dg.target(e)] <=
-                       0);
+                fp.edge_cap[e] - fp.edge_flow[e] > 0) { //&& 
+                //fp.node_flow[dg.target(e)] - fp.node_cap[dg.target(e)] < 0) {  // push
+                //Source excess flow, sink has remaining capacity
+                //Q: Why not?
+                //assert(fp.node_flow[dg.target(e)] - fp.node_cap[dg.target(e)] <
+                //       0);
                 double ex_flow = fp.node_flow[n] - fp.node_cap[n];
                 double res_flow = 2. / fp.phi - fp.edge_flow[e];
                 double deg_min_ex = fp.node_cap[n] * fp.phi / 2.0 -
@@ -1585,13 +1569,15 @@ unit_start:
                                 dg.target(e)) == fp.active_nodes.end());
                     fp.active_nodes.insert(dg.target(e));
                 }
+                pushed_flow += phi;
+                //cout << "phi:" << pushed_flow << endl;
                 goto unit_start;
             }
         }
 
         // relabel
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
-            //Q: wasteful check
+            //Q: costly check, only debug
             if (n == dg.target(e) || !fp.A.count(dg.target(e)))
                 continue;
             assert(n == dg.source(e));
@@ -1629,10 +1615,17 @@ unit_start:
     adjust_flow_source(dg, fp, trimmed_nodes);
 
     cout << "local flow: cut_size_after" << fp.A.size() << endl;
-    cout << "local flow: complement siz after" << fp.R.size() << endl;
+    cout << "local flow: complemen  t siz after" << fp.R.size() << endl;
 
-    if (cut_size_before == fp.A.size())
+    //this is bad? check instead if one push or relabel was done.
+    if (cut_size_before == fp.A.size()) {
+        cout << "unit flow done. pushed ... flow:" << pushed_flow << endl;
+        assert(level_queue[fp.h - 1].size() == 0);
+        for (auto& n : fp.A) {
+            assert(fp.node_flow[n] <= fp.node_cap[n]);
+        }
         return;
+    }
 
     fp.active_nodes.clear();
     for (auto& n : fp.A) {
@@ -1645,10 +1638,6 @@ unit_start:
     //fp.h = fp.A.size();
 
     goto unit_start;
-
-    for (auto& n : fp.A)
-        assert(fp.node_flow[n] <= fp.node_cap[n]); //||
-               //fp.node_flow[n] >= fp.h - 1);
 
     return;
 }
@@ -1751,6 +1740,7 @@ slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
 
     cout << "local flow: cut size after " << cut.size() << endl;
     cout << "local flow: maximum preflow: " << preflow.flowValue() << endl;
+    //Q: * 2 after reduction?
     cout << "local flow: sought preflow: " << cut_edges / phi << endl;
     cout << "local flow: (phi = ) " << phi << "cut edges " << cut_edges << endl;
     // Sought == maximum, we achieved our goal.
@@ -1769,7 +1759,7 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
     flow_instance fp = flow_instance(dg, phi);
     fp.n = gc.nodes.size();
     fp.e = gc.num_edges;
-    set<Node> R_ug;
+    set<Node>   R_ug;
     set<DGNode> R;
     set<DGNode> A;
 
@@ -1856,7 +1846,7 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
 }
 
 void
-graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut)
+graph_from_cut(GraphContext& g, GraphContext& sg, set<Ntrimmingode> cut)
 {
     map<Node, Node> reverse_map = map<Node, Node>();
     set<Node> all_nodes = set<Node>();
@@ -2669,25 +2659,38 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
 
     conf.G_phi_target = PHI_UNREACHABLE;
 
+    /*
     for (int i = 0; i < gc.nodes.size(); i++) {
         indices.push_back(i);
     }
+    */
 
     // Q: use parameter or set dummy
     cm_result cm_res;
     run_cut_matching(gc, conf, cm_res);
-    phi = cm_res.best_conductance * 0.3;  // strong
+    phi = cm_res.best_conductance * 0.8;
 
-    double ratio_to_remove = 1./gc.nodes.size();
+    //double ratio_to_remove = 1./gc.nodes.size();
+
+    uniform_real_distribution<double> random_fraction(0.0, conf.h_ratio);
+    random_device rd;
+    default_random_engine r_engine(rd());
 
     do {
         sg.clear();
         cut.clear();
 
+        double node_fraction_to_remove = random_fraction(r_engine);
+
+        for (int i = 0; i < gc.nodes.size(); i++) {
+            indices.push_back(i);
+        }
+
         shuffle(indices.begin(), indices.end(),
                 default_random_engine(random_device()()));
+
         indices.erase(indices.begin(),
-                      indices.begin() + gc.nodes.size() * ratio_to_remove);
+                      indices.begin() + gc.nodes.size() * node_fraction_to_remove);
 
         for (auto& i : indices) {
             cut.insert(gc.g.nodeFromId(i));
@@ -2696,15 +2699,20 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
         assert(gc.nodes.size() >= cut.size() > 0);
 
         graph_from_cut(gc, sg, cut);
-        if (cut.size() < gc.nodes.size() / 2)
+        /*
+        if (gc.nodes.size() - cut.size() < gc.nodes.size() / 2)
             ratio_to_remove += 0.001;
-        else
-            break;
-        
+
+        else {
+            cout << "did not find disconnecting cut" << endl;
+            return;
+        }
+        */
 
     } while (connected(sg.g));
 
-    phi = 1. / (gc.num_edges);
+
+    //phi = 1. / (gc.num_edges);
 
     cout << "nodes orig" << gc.nodes.size() << endl;
     cout << "nodes cut" << cut.size() << endl;
@@ -2725,10 +2733,12 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     sg_slow.clear();
     sg_fast.clear();
 
+    /*
     for (auto& n : cut) {
         cout << gc.g.id(n) << " ";
     }
     cout << endl;
+    */
 
     return;
 }
@@ -2840,8 +2850,8 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
     // butterfly_test(conf, 100, 100, 1, 1);
     // butterfly_test(conf, 200, 200, 2, 2);
     double phi_ratio_target = 0.16;
-    //test_connect_subgraph(gc, conf, phi);
-    test_expander_ratio(gc, conf, phi_ratio_target);
+    test_connect_subgraph(gc, conf, phi);
+    //test_expander_ratio(gc, conf, phi_ratio_target);
     return;
 }
 
@@ -3004,7 +3014,6 @@ main(int argc, char** argv)
 
     for (const auto& r : node_ratio_edges_inside)
         cout << "inside cluster vol/total vol cluster;" << r << endl;
-
 
     cout << "graph;" << config.input.file_name << endl;
     cout << "nodes;" << gc.nodes.size() << endl;
