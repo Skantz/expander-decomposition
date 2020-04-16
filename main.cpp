@@ -1457,8 +1457,10 @@ adjust_flow_source(DG& dg, flow_instance& fp, set<DGNode> trimmed_nodes)
             assert(!fp.A.count(n));
             if (fp.A.count(dg.target(e))) {
                 //Q: 2.0/fp.phi? - fp.edge_flow[e] ?
-                fp.node_flow[dg.target(e)] += 2.0/fp.phi; // - fp.edge_flow[e];
-                fp.initial_mass[dg.target(e)] += 2.0 / fp.phi; //- fp.edge_flow[e];
+                cout << "HELLO" << fp.edge_flow[e] << endl;
+                cout << "2PHI" << 2.0/fp.phi << endl;
+                fp.node_flow[dg.target(e)] += 2.0/fp.phi; //- fp.edge_flow[e];
+                fp.initial_mass[dg.target(e)] += 2.0 / fp.phi; // - fp.edge_flow[e];
                 // Q: should not be relevant
                 // fp.edge_flow[fp.reverse_arc[e]] -= 2/fp.phi;
             }
@@ -1617,16 +1619,6 @@ unit_start:
     cout << "local flow: cut_size_after" << fp.A.size() << endl;
     cout << "local flow: complemen  t siz after" << fp.R.size() << endl;
 
-    //this is bad? check instead if one push or relabel was done.
-    if (cut_size_before == fp.A.size()) {
-        cout << "unit flow done. pushed ... flow:" << pushed_flow << endl;
-        assert(level_queue[fp.h - 1].size() == 0);
-        for (auto& n : fp.A) {
-            assert(fp.node_flow[n] <= fp.node_cap[n]);
-        }
-        return;
-    }
-
     fp.active_nodes.clear();
     for (auto& n : fp.A) {
         if (fp.node_flow[n] >
@@ -1634,6 +1626,18 @@ unit_start:
             fp.node_label[n] < fp.h - 1)
             fp.active_nodes.insert(n);
     }
+
+    //this is bad? check instead if one push or relabel was done.
+    if (fp.active_nodes.size() == 0) { //(cut_size_before == fp.A.size()) {
+        cout << "unit flow done. pushed ... flow:" << pushed_flow << endl;
+        assert(level_queue[fp.h - 1].size() == 0);
+        for (auto& n : fp.A) {
+            //Q: this should hold
+            assert(fp.node_flow[n] <= fp.node_cap[n] || fp.node_label[n] == fp.h - 1);
+        }
+        return;
+    }
+
 
     //fp.h = fp.A.size();
 
@@ -1691,7 +1695,7 @@ slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
             cut_edges++;
         }
         else if (!in_cut[u] && in_cut[v]) {
-            Arc e = sg.addArc(sg_v, s);
+            Arc e = sg.addArc(s, sg_v);
             cap[e] = 2. / phi;
             cut_edges++;
         }
@@ -1741,7 +1745,7 @@ slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
     cout << "local flow: cut size after " << cut.size() << endl;
     cout << "local flow: maximum preflow: " << preflow.flowValue() << endl;
     //Q: * 2 after reduction?
-    cout << "local flow: sought preflow: " << cut_edges / phi << endl;
+    cout << "local flow: sought preflow: " << 2 * cut_edges / phi << endl;
     cout << "local flow: (phi = ) " << phi << "cut edges " << cut_edges << endl;
     // Sought == maximum, we achieved our goal.
 
@@ -1811,7 +1815,8 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
                 fp.edge_cap[e] = 2. / phi;
                 fp.node_flow[n] -= 2. / phi;
                 fp.edge_flow[e] = 2. / phi;
-                fp.node_flow[dg.target(e)] += 2. / phi;
+                
+                 fp.node_flow[dg.target(e)] += 2. / phi;
                 fp.edge_flow[fp.reverse_arc[e]] = -2. / phi;
             }
             else {
@@ -1846,7 +1851,7 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
 }
 
 void
-graph_from_cut(GraphContext& g, GraphContext& sg, set<Ntrimmingode> cut)
+graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut)
 {
     map<Node, Node> reverse_map = map<Node, Node>();
     set<Node> all_nodes = set<Node>();
@@ -2679,8 +2684,10 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     do {
         sg.clear();
         cut.clear();
+        indices.clear();
 
         double node_fraction_to_remove = random_fraction(r_engine);
+        cout << node_fraction_to_remove << " fraction" << endl;
 
         for (int i = 0; i < gc.nodes.size(); i++) {
             indices.push_back(i);
@@ -2696,24 +2703,19 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
             cut.insert(gc.g.nodeFromId(i));
         }
 
+        cout << indices[0] << " indices 0" << endl;
+        cout << "nodes in cut" << indices.size() << endl;
+
         assert(gc.nodes.size() >= cut.size() > 0);
 
         graph_from_cut(gc, sg, cut);
-        /*
-        if (gc.nodes.size() - cut.size() < gc.nodes.size() / 2)
-            ratio_to_remove += 0.001;
 
-        else {
-            cout << "did not find disconnecting cut" << endl;
-            return;
-        }
-        */
-
-    } while (connected(sg.g));
+    } while (false); //while (connected(sg.g));
 
 
     //phi = 1. / (gc.num_edges);
 
+    //assert(!connected(sg.g));
     cout << "nodes orig" << gc.nodes.size() << endl;
     cout << "nodes cut" << cut.size() << endl;
     set<Node> scut = slow_trimming(gc, conf, cut, phi);
@@ -2730,8 +2732,33 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     assert(connected(sg_slow.g));
     assert(connected(sg_fast.g));
     // Q: clear sg
-    sg_slow.clear();
-    sg_fast.clear();
+
+    cm_result cm_res_slow, cm_res_fast;
+    if (sg_slow.nodes.size() > 1)
+        run_cut_matching(sg_slow, conf, cm_res_slow);
+    else
+        cm_res_slow.best_conductance = 1;        
+    if (sg_fast.nodes.size() > 1)
+        run_cut_matching(sg_fast, conf, cm_res_fast);
+    else
+        cm_res_fast.best_conductance = 1;
+    
+    double h = double(gc.num_edges) /
+                    (10 * 1 *
+                     pow(log2(gc.num_edges), 2));
+
+    cout << "===" << endl;
+    cout << "exptest: graph connected after cut? " << connected(sg.g) << endl;
+    cout << "exptest: lowest conductance before       <-- " << cm_res.best_conductance      << " cut size " << indices.size()       << "/" << gc.nodes.size() << " (in theory, we should only remove h = " << h << " nodes)" << endl;
+    if (connected(sg.g)) {
+        cm_result cm_res_sub;
+        run_cut_matching(sg, conf, cm_res_sub);
+        cout << "exptest: lowest conductance after (after cut, before trim) <-- " << cm_res_sub.best_conductance << " cut size " << sg.nodes.size() << "/" << gc.nodes.size() << endl;
+    }
+    cout << "exptest: lowest conductance after (slow) <-- " << cm_res_slow.best_conductance << " cut size " << sg_slow.nodes.size() << "/" << gc.nodes.size() << endl;
+    cout << "exptest: lowest conductance after (fast) <-- " << cm_res_fast.best_conductance << " cut size " << sg_fast.nodes.size() << "/" << gc.nodes.size() << endl; 
+    cout << "===" << endl;
+
 
     /*
     for (auto& n : cut) {
@@ -2930,8 +2957,8 @@ main(int argc, char** argv)
     }
 
     // main
-    test_expander(gc, config, config.G_phi_target);
-    return 0;
+    //test_expander(gc, config, config.G_phi_target);
+    //return 0;
 
     decomp_stats stats;
     decomp_trace trace;
