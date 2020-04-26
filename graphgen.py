@@ -44,6 +44,33 @@ def expander_graph(p_nodes):
     g = nx.chordal_cycle_graph(p_nodes)
     return g
 
+def margulis_graph(n):
+    """construct 8-regular marglis graph, |V| = n^2"""
+    g = nx.MultiGraph(undirected=True)
+    g.add_nodes_from([i for i in range(n**2)])
+
+    adjacency_dict = {}
+    for x in range(n):
+        for y in range(n):
+            assert ((x, y) not in adjacency_dict)
+            adjacency_dict[(x,y)] = []
+            for pm in [-1, 1]:
+                adjacency_dict[(x, y)] += [(((x + pm * 2*y)) % n, y)]
+                adjacency_dict[(x, y)] += [(((x + pm * (2*y + 1)) % n, y))]
+                adjacency_dict[(x, y)] += [(x, (y + pm * 2*x) % n)]
+                adjacency_dict[(x, y)] += [(x, (y + pm * (2*x + 1)) % n)]
+    for k in adjacency_dict:
+        assert(len(adjacency_dict[k]) == 8)
+        for v in adjacency_dict[k]:
+            s, t = k[0] * n + k[1], v[0]*n + v[1]
+            #one-way adjacency representation
+            #including self-loops
+            if s not in g.neighbors(t) or s <= t:
+                g.add_edge(s, t)
+
+    #assert 8-regular
+    return g
+
 def write_graph(G, f):
     G = nx.convert_node_labels_to_integers(G, first_label=1)
     f.write(str(len(G.nodes())) +" "+ str(len(G.edges()))+"\n")
@@ -54,8 +81,11 @@ def write_graph(G, f):
 f = open("chordal_cycle_graph_2000.graph", "w+")
 write_graph(expander_graph(2000), f)
 
-f = open("cluster_graph_10_5.graph", "w+")
-write_graph(cluster_graph(5, 200, 20), f)
+f = open("margulis_10000.graph", "w+")
+write_graph(margulis_graph(100), f)
+
+f = open("cluster_graph_50_15.graph", "w+")
+write_graph(cluster_graph(5, 50, 10), f)
 
 f = open("complete10.graph", "w+")
 write_graph(nx.complete_graph(10), f)
@@ -78,6 +108,9 @@ write_graph(nx.barbell_graph(4, 0), f)
 
 f = open("barbell10-10.graph", "w+")
 write_graph(nx.barbell_graph(10, 1), f)
+
+f = open("barbell25-25.graph", "w+")
+write_graph(nx.barbell_graph(25, 1), f)
 
 f = open("barbell100-100.graph", "w+")
 write_graph(nx.barbell_graph(100, 1), f)
