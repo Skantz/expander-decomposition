@@ -356,9 +356,14 @@ parse_chaco_format(const string& filename, ListGraph& g, vector<Node>& nodes)
             // cout << "edge to: " << v_name << "..." ;
             assert(v_name != 0);
             Node v = nodes[v_name - 1];
-            if (findEdge(g, u, v) == INVALID) {
+            //Q: is this right?
+            //Ignore multi-edges unless self-loop
+            //If self loop add twice to correctly initialize degree
+            if (findEdge(g, u, v) == INVALID || u == v) {
                 g.addEdge(u, v);
             }
+            //if (u == v)
+            //    g.addEdge(v, u);
         }
     }
 
@@ -1181,7 +1186,9 @@ create_options()
         "v,verbose",
         "Debug; Whether to print nodes and cuts Does not include "
         "paths. Produces a LOT of output on large graphs.")(
-        "d,paths", "Debug; Whether to print paths");
+        "d,paths", "Debug; Whether to print paths")( 
+        "known_phi", "where applicable use known phi value instead of heuristic"
+        );
     return options;
 }
 
@@ -1459,7 +1466,7 @@ adjust_flow_source(DG& dg, flow_instance& fp, set<DGNode> trimmed_nodes)
                 //Q: 2.0/fp.phi? - fp.edge_flow[e] ?
                 cout << "HELLO" << fp.edge_flow[e] << endl;
                 cout << "2PHI" << 2.0/fp.phi << endl;
-                fp.node_flow[dg.target(e)] += 2.0/fp.phi; //- fp.edge_flow[e];
+                fp.node_flow[dg.target(e)] += 2.0/fp.phi - fp.edge_flow[e];
                 fp.initial_mass[dg.target(e)] += 2.0 / fp.phi; // - fp.edge_flow[e];
                 // Q: should not be relevant
                 // fp.edge_flow[fp.reverse_arc[e]] -= 2/fp.phi;
@@ -1503,6 +1510,7 @@ unit_setup:
         fp.h = level_queue.size();
     
     double pushed_flow = 0.0;
+    int flow_iter = 0;
 unit_start:
     assert(level_queue.size() <= fp.h);
     int cut_size_before = fp.A.size();
@@ -1610,11 +1618,27 @@ unit_start:
         goto unit_start;
     }
 
+    flow_iter++;
+
     cout << "local_flow: finish run of uf" << endl;
     cout << "local_flow: cut size before: " << cut_size_before << endl;
     cout << "local_flow: complement size before: " << fp.R.size() << endl;
     set<DGNode> trimmed_nodes = level_cut(dg, fp, level_queue);
     adjust_flow_source(dg, fp, trimmed_nodes);
+    //Q: another assertion
+    double vol_prune = 0.;
+    int cut_edges = 0;
+    //Q: going to dg, we have doubled volume, self-loops, cut edges
+    //Works for known expanders, of course.
+    for (auto& n : trimmed_nodes) {
+        for (DGOutArcIt e(dg, n) ; e != INVALID; ++e) {
+            vol_prune += 1;
+            if (fp.A.count(dg.target(e)))
+                cut_edges += 1;  
+        }
+    }
+    assert (vol_prune <= flow_iter * 8 / fp.phi);
+    assert (cut_edges <= 4* fp.phi);
 
     cout << "local flow: cut_size_after" << fp.A.size() << endl;
     cout << "local flow: complemen  t siz after" << fp.R.size() << endl;
@@ -2748,13 +2772,14 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
                      pow(log2(gc.num_edges), 2));
 
     cout << "===" << endl;
-    cout << "exptest: graph connected after cut? " << connected(sg.g) << endl;
-    cout << "exptest: lowest conductance before       <-- " << cm_res.best_conductance      << " cut size " << indices.size()       << "/" << gc.nodes.size() << " (in theory, we should only remove h = " << h << " nodes)" << endl;
     if (connected(sg.g)) {
         cm_result cm_res_sub;
         run_cut_matching(sg, conf, cm_res_sub);
         cout << "exptest: lowest conductance after (after cut, before trim) <-- " << cm_res_sub.best_conductance << " cut size " << sg.nodes.size() << "/" << gc.nodes.size() << endl;
     }
+    cout << "phi used (0.8 * best before * 0.16) " << phi << endl;
+    cout << "exptest: graph connected after cut? " << connected(sg.g) << endl;
+    cout << "exptest: lowest conductance before       <-- " << cm_res.best_conductance      << " cut size " << indices.size()       << "/" << gc.nodes.size() << " (in theory, we should only remove h = " << h << " nodes)" << endl;
     cout << "exptest: lowest conductance after (slow) <-- " << cm_res_slow.best_conductance << " cut size " << sg_slow.nodes.size() << "/" << gc.nodes.size() << endl;
     cout << "exptest: lowest conductance after (fast) <-- " << cm_res_fast.best_conductance << " cut size " << sg_fast.nodes.size() << "/" << gc.nodes.size() << endl; 
     cout << "===" << endl;
@@ -3022,7 +3047,7 @@ main(int argc, char** argv)
 
     int i = 0;
     for (auto& c : cuts_node_vector) {
-        cout << "cluster " << i << ";";
+        cout << "decomp cluster " << i << ";";
         for (auto& n : c) {
             cout << gc.g.id(n) << ";";
         }
