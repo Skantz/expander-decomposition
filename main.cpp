@@ -1638,7 +1638,7 @@ unit_start:
         }
     }
     assert (vol_prune <= flow_iter * 8 / fp.phi);
-    assert (cut_edges <= 4* fp.phi);
+    assert (cut_edges <= 4 * flow_iter);
 
     cout << "local flow: cut_size_after" << fp.A.size() << endl;
     cout << "local flow: complemen  t siz after" << fp.R.size() << endl;
