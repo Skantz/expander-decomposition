@@ -94,6 +94,8 @@ struct Configuration {
     bool output_cut;
     string output_file;
     bool show_help_and_exit = false;
+    bool only_test_expander = false;
+    bool decompose_with_tests = false;
     bool use_H_phi_target = false;
     double H_phi_target = 0;
     bool use_G_phi_target = false;
@@ -101,6 +103,7 @@ struct Configuration {
     // we only break if we find a good enough cut that is also this balanced
     // (has this minside volume)
     bool use_volume_treshold = false;
+    double known_phi = 0.;
     double volume_treshold_factor = 1;
     double h_factor = 0;
     double h_ratio = 0;
@@ -1162,6 +1165,15 @@ create_options()
         "Volume treshold. Only used if G_phi is used. Will be multiplied by "
         "number of edges, so to require e.g. minimum 10% volume, write 0.1.",
         cxxopts::value<double>()->implicit_value("1"))(
+        "known_phi",
+        "use explicit value for g phi in some tests",
+        cxxopts::value<double>()->implicit_value("0.0"))(
+        "only_test_expander",
+        "test trimming (don't decompose)",
+        cxxopts::value<bool>()->implicit_value("false"))(
+        "decompose_with_tests",
+        "perform more correct assertions (slower)",
+        cxxopts::value<bool>()->implicit_value("false"))(
         "f,file", "File to read graph from", cxxopts::value<std::string>())(
         "r,max-rounds", "Number of rounds after which to stop (0 for no limit)",
         cxxopts::value<long>()->default_value("25"))(
@@ -1186,9 +1198,7 @@ create_options()
         "v,verbose",
         "Debug; Whether to print nodes and cuts Does not include "
         "paths. Produces a LOT of output on large graphs.")(
-        "d,paths", "Debug; Whether to print paths")( 
-        "known_phi", "where applicable use known phi value instead of heuristic"
-        );
+        "d,paths", "Debug; Whether to print paths");
     return options;
 }
 
@@ -1247,6 +1257,18 @@ parse_options(int argc, char** argv, Configuration& config)
     if (result.count("h_ratio")) {
         config.h_ratio = result["h_ratio"].as<double>();
     }
+
+    if (result.count("only_test_expander")) {
+        config.only_test_expander = true; //result["only_test_expander"].as<bool>();
+    }
+    if (result.count("decompose_with_tests")) {
+        config.decompose_with_tests = true; //result["decompose_with_tests"].as<bool>();
+    }
+    if (result.count("known_phi")) {
+        config.known_phi = result["known_phi"].as<double>();
+    }
+
+
 }
 
 using DG = ListDigraph;
@@ -1463,9 +1485,6 @@ adjust_flow_source(DG& dg, flow_instance& fp, set<DGNode> trimmed_nodes)
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
             assert(!fp.A.count(n));
             if (fp.A.count(dg.target(e))) {
-                //Q: 2.0/fp.phi? - fp.edge_flow[e] ?
-                cout << "HELLO" << fp.edge_flow[e] << endl;
-                cout << "2PHI" << 2.0/fp.phi << endl;
                 fp.node_flow[dg.target(e)] += 2.0/fp.phi - fp.edge_flow[e];
                 fp.initial_mass[dg.target(e)] += 2.0 / fp.phi; // - fp.edge_flow[e];
                 // Q: should not be relevant
@@ -1477,10 +1496,11 @@ adjust_flow_source(DG& dg, flow_instance& fp, set<DGNode> trimmed_nodes)
 }
 
 void
-uf(DG& dg, flow_instance& fp)
+uf(DG& dg, flow_instance& fp, Configuration conf)
 {
     bool excess_flow;
-    assert(fp.A.size() > 0 && fp.R.size() > 0 && fp.A.size() >= fp.R.size());
+    //assert(fp.A.size() > 0 && fp.R.size() > 0 && fp.A.size() >= fp.R.size());
+    assert(fp.A.size() >= fp.R.size());
     // Set up level queues
     vector<list<DGNode>> level_queue;
     for (int i = 0; i < fp.h; i++) {
@@ -1490,6 +1510,7 @@ uf(DG& dg, flow_instance& fp)
 unit_setup:
     level_queue.clear();
 
+    //Q: fp.h
     for (int i = 0; i < fp.h && i < fp.A.size(); i++) {
         level_queue.push_back(list<DGNode>());
     }
@@ -1566,8 +1587,9 @@ unit_start:
                     fp.node_cap[n] &&
                     fp.node_flow[n] + phi >
                     fp.node_cap[n]) {
-                    assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
-                                n) != fp.active_nodes.end());
+                    if (conf.decompose_with_tests)
+                        assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
+                                    n) != fp.active_nodes.end());
                     fp.active_nodes.erase(n);   
                 }
                 if (fp.node_flow[dg.target(e)] >
@@ -1575,37 +1597,44 @@ unit_start:
                     fp.node_flow[dg.target(e)] - phi <=
                     fp.node_cap[dg.target(e)] && 
                     fp.node_label[dg.target(e)] < fp.h -1) {
-                    assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
-                                dg.target(e)) == fp.active_nodes.end());
+                    if (conf.decompose_with_tests)
+                        assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
+                                    dg.target(e)) == fp.active_nodes.end());
                     fp.active_nodes.insert(dg.target(e));
                 }
                 pushed_flow += phi;
-                //cout << "phi:" << pushed_flow << endl;
+                //if (flow_iter % 1000 == 0)  {
+                //    cout << "local flow: trimming progress, pushed flow: " << pushed_flow << endl;
+                //}
                 goto unit_start;
             }
         }
 
         // relabel
-        for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
-            //Q: costly check, only debug
-            if (n == dg.target(e) || !fp.A.count(dg.target(e)))
-                continue;
-            assert(n == dg.source(e));
-            if (fp.edge_cap[e] - fp.edge_flow[e] > 0) {
-                if (fp.node_label[n] > fp.node_label[dg.target(e)]) {
-                    cout << "local flow: first label not smaller" << dg.id(n)
-                         << " : " << dg.id(dg.target(e)) << endl;
-                    cout << "local flow: " << fp.node_label[n] << " : "
-                         << fp.node_label[dg.target(e)] << endl;
-                    assert(false);
+
+        if (conf.decompose_with_tests) {
+            for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
+                //Q: costly check, only debug
+                if (n == dg.target(e) || !fp.A.count(dg.target(e)))
+                    continue;
+                assert(n == dg.source(e));
+                if (fp.edge_cap[e] - fp.edge_flow[e] > 0) {
+                    if (fp.node_label[n] > fp.node_label[dg.target(e)]) {
+                        cout << "local flow: first label not smaller" << dg.id(n)
+                            << " : " << dg.id(dg.target(e)) << endl;
+                        cout << "local flow: " << fp.node_label[n] << " : "
+                            << fp.node_label[dg.target(e)] << endl;
+                        assert(false);
+                    }
                 }
+                // assert (fp.node_label[n] <= fp.node_label[dg.target(e)]);
             }
-            // assert (fp.node_label[n] <= fp.node_label[dg.target(e)]);
         }
 
         int lv = fp.node_label[n];
-        assert(find(level_queue[lv].begin(), level_queue[lv].end(), n) !=
-               level_queue[lv].end());
+
+        //assert(find(level_queue[lv].begin(), level_queue[lv].end(), n) !=
+        //       level_queue[lv].end());
         int c1 = level_queue[lv + 1].size();
         level_queue[lv + 1].push_back(n);
         int c2 = level_queue[lv].size();
@@ -1758,9 +1787,17 @@ slow_trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
     cut.clear();
 
     for (DGNodeIt n(sg); n != INVALID; ++n) {
+        double out_flow = 0;
+        //for (DGOutArcIt e(sg, n); e != INVALID; ++e) {
+        //    out_flow += preflow.flow(e);
+        //}
+        //if (out_flow != 0) {
+        //    cout << "local flow: arc flow" << out_flow << " n: " << sg.id(n)  << endl;
+        //}
         // cout << preflow.minCut(n) << " : " << sg.id(n) << endl;
         if (!preflow.minCut(n) && n != s && n != t)  //) // && n != s && n != t)
             cut.insert(sg_to_orig[n]);
+            //cout << "local flow: slow trim: " << endl;
     }
     for (DGNodeIt n(sg); n != INVALID; ++n) {
         ;  // cout << (preflow.
@@ -1780,6 +1817,9 @@ set<Node>
 trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
 {
     // assert (phi >= 0.00001);
+    if (cut.size() == gc.nodes.size()) {
+        return cut;
+    } 
     assert(cut.size() >= gc.nodes.size() / 2);
     DG dg;
     digraph_from_graph(gc.g, dg);
@@ -1831,7 +1871,7 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
     // for (ListDigraph::ArcIt e(DG); e != INVALID; ++e) {
     //    fp.edge_cap[e] = 2/phi;
     //}
-    assert(R.size() > 0);
+    // assert(R.size() > 0);
     for (auto& n : fp.R) {
         fp.node_flow[n] = 0.0;
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
@@ -1865,7 +1905,7 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
     // assert (fp.active_nodes.size() > 0);
 
     assert(fp.A.size() >= fp.R.size());
-    uf(dg, fp);
+    uf(dg, fp, conf);
 
     // dummy
     cut.clear();
@@ -2693,18 +2733,36 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
         indices.push_back(i);
     }
     */
+    
 
     // Q: use parameter or set dummy
     cm_result cm_res;
-    run_cut_matching(gc, conf, cm_res);
-    phi = cm_res.best_conductance * 0.8;
+    if (!conf.known_phi) {
+        run_cut_matching(gc, conf, cm_res);
+        phi = cm_res.best_conductance * 0.8;
+    }
+    else {
+        phi = conf.known_phi;
+        cm_res.best_conductance = phi;
+    }
+
 
     //double ratio_to_remove = 1./gc.nodes.size();
 
-    uniform_real_distribution<double> random_fraction(0.0, conf.h_ratio);
+    double h_ratio = conf.h_ratio;
+    if (h_ratio <= 0.) {
+        h_ratio = (double(gc.num_edges) /
+                    (10 * conf.volume_treshold_factor *
+                     pow(log2(gc.num_edges), 2))) / gc.nodes.size();
+    cout << "local flow:, set h_ratio to " << h_ratio << endl;
+    }
+
+
+    uniform_real_distribution<double> random_fraction(0, h_ratio);
     random_device rd;
     default_random_engine r_engine(rd());
 
+    int iter = 0;
     do {
         sg.clear();
         cut.clear();
@@ -2733,8 +2791,9 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
         assert(gc.nodes.size() >= cut.size() > 0);
 
         graph_from_cut(gc, sg, cut);
+        iter++;
 
-    } while (false); //while (connected(sg.g));
+    } while (iter < 1); //while (connected(sg.g));
 
 
     //phi = 1. / (gc.num_edges);
@@ -2982,8 +3041,10 @@ main(int argc, char** argv)
     }
 
     // main
-    //test_expander(gc, config, config.G_phi_target);
-    //return 0;
+    if (config.only_test_expander == 1) {
+        test_expander(gc, config, config.G_phi_target);
+        return 0;
+    }
 
     decomp_stats stats;
     decomp_trace trace;
