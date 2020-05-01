@@ -1335,6 +1335,17 @@ digraph_from_graph(G& g, DG& dg, ArcMap<Arc>& reverse_arc)
     return &dg;
 }
 
+
+
+struct node_label_pair {
+    DGNode node;
+    int    label;
+
+    bool operator<(const node_label_pair& other) const {
+        return label > other.label;
+    }
+};
+
 struct flow_instance {
     flow_instance(DG& dg_, double phi)
         : edge_flow(dg_, 0.0),
@@ -1362,7 +1373,7 @@ struct flow_instance {
     set<DGNode> A;
     set<DGNode> R;
 
-    set<DGNode> active_nodes;
+    priority_queue<node_label_pair> active_nodes;
     set<DGNode> trimmed_last_round;
 };
 
@@ -1536,16 +1547,13 @@ unit_start:
     assert(level_queue.size() <= fp.h);
     int cut_size_before = fp.A.size();
     while (fp.active_nodes.size() > 0) {
-        int lowest_label = fp.h;
+        //int lowest_label = fp.h;
         DGNode n;
         //Q: make priority queue
-        for (auto& n_ : fp.active_nodes) {
-            assert (fp.node_label[n_] < fp.h);
-            if (fp.node_label[n_] < lowest_label) {
-                lowest_label = fp.node_label[n_];
-                n = n_;
-            }
-        }
+        node_label_pair nlp = fp.active_nodes.top();
+        n = nlp.node;
+        //cout << "local flow: working on: " << fp.node_flow[n] << endl;
+
         excess_flow = true;
         assert(fp.node_flow[n] > 0);
         assert(fp.node_label[n] < fp.h - 1);
@@ -1587,22 +1595,28 @@ unit_start:
                     fp.node_cap[n] &&
                     fp.node_flow[n] + phi >
                     fp.node_cap[n]) {
-                    if (conf.decompose_with_tests)
-                        assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
-                                    n) != fp.active_nodes.end());
-                    fp.active_nodes.erase(n);   
+                    //if (conf.decompose_with_tests)
+                    //    assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
+                    //                n) != fp.active_nodes.end());
+                    //fp.active_nodes.erase(n);   
+                    //Q: implicit delete
+                    fp.active_nodes.pop();
                 }
                 if (fp.node_flow[dg.target(e)] >
                     fp.node_cap[dg.target(e)] &&
                     fp.node_flow[dg.target(e)] - phi <=
                     fp.node_cap[dg.target(e)] && 
                     fp.node_label[dg.target(e)] < fp.h -1) {
-                    if (conf.decompose_with_tests)
-                        assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
-                                    dg.target(e)) == fp.active_nodes.end());
-                    fp.active_nodes.insert(dg.target(e));
+                    //if (conf.decompose_with_tests)
+                    //    assert(find(fp.active_nodes.begin(), fp.active_nodes.end(),
+                    //                dg.target(e)) == fp.active_nodes.end());
+                    node_label_pair new_active_pair;
+                    new_active_pair.node = dg.target(e);
+                    new_active_pair.label = fp.node_label[dg.target(e)];
+                    fp.active_nodes.push(new_active_pair);
                 }
                 pushed_flow += phi;
+                //fp.active_nodes.push(nlp);
                 //if (flow_iter % 1000 == 0)  {
                 //    cout << "local flow: trimming progress, pushed flow: " << pushed_flow << endl;
                 //}
@@ -1632,7 +1646,6 @@ unit_start:
         }
 
         int lv = fp.node_label[n];
-
         //assert(find(level_queue[lv].begin(), level_queue[lv].end(), n) !=
         //       level_queue[lv].end());
         int c1 = level_queue[lv + 1].size();
@@ -1640,11 +1653,16 @@ unit_start:
         int c2 = level_queue[lv].size();
         level_queue[lv].remove(n);
         fp.node_label[n] = fp.node_label[n] + 1;
+        nlp.label = nlp.label + 1;
         assert(level_queue[lv + 1].size() == c1 + 1);
         assert(level_queue[lv].size() == c2 - 1);
-        if (fp.node_label[n] >= fp.h - 1)
-            fp.active_nodes.erase(n);
-        goto unit_start;
+        if (fp.node_label[n] >= fp.h - 1) {
+            fp.active_nodes.pop();
+        }   //implicit deletion
+
+            //fp.active_nodes.erase(n);
+
+        //goto unit_start;
     }
 
     flow_iter++;
@@ -1672,12 +1690,16 @@ unit_start:
     cout << "local flow: cut_size_after" << fp.A.size() << endl;
     cout << "local flow: complemen  t siz after" << fp.R.size() << endl;
 
-    fp.active_nodes.clear();
+    fp.active_nodes = priority_queue <node_label_pair>();
     for (auto& n : fp.A) {
         if (fp.node_flow[n] >
             fp.node_cap[n] &&
-            fp.node_label[n] < fp.h - 1)
-            fp.active_nodes.insert(n);
+            fp.node_label[n] < fp.h - 1) {
+                node_label_pair next_nlp;
+                next_nlp.label = fp.node_label[n];
+                next_nlp.node  = n;
+                fp.active_nodes.push(next_nlp);
+            }
     }
 
     //this is bad? check instead if one push or relabel was done.
@@ -1880,7 +1902,7 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
                 fp.node_flow[n] -= 2. / phi;
                 fp.edge_flow[e] = 2. / phi;
                 
-                 fp.node_flow[dg.target(e)] += 2. / phi;
+                fp.node_flow[dg.target(e)] += 2. / phi;
                 fp.edge_flow[fp.reverse_arc[e]] = -2. / phi;
             }
             else {
@@ -1894,8 +1916,12 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
 
     for (auto& n : fp.A) {
         if (fp.node_flow[n] - min(fp.node_flow[n], fp.initial_mass[n]) >
-            fp.node_cap[n])
-            fp.active_nodes.insert(n);
+            fp.node_cap[n]) {
+                node_label_pair nlp;
+                nlp.label = 0;
+                nlp.node  = n;
+                fp.active_nodes.push(nlp);
+            }
     }
 
     if (fp.active_nodes.size() == 0) {
