@@ -362,7 +362,7 @@ parse_chaco_format(const string& filename, ListGraph& g, vector<Node>& nodes)
             //Q: is this right?
             //Ignore multi-edges unless self-loop
             //If self loop add twice to correctly initialize degree
-            if (findEdge(g, u, v) == INVALID || u == v) {
+            if (true) { //(findEdge(g, u, v) == INVALID || u == v) {
                 g.addEdge(u, v);
             }
             //if (u == v)
@@ -1684,6 +1684,8 @@ unit_start:
                 cut_edges += 1;  
         }
     }
+    cout << "vol prune" << vol_prune << "flow iter 8 / fp phi: " << flow_iter * 8 / fp.phi; 
+
     assert (vol_prune <= flow_iter * 8 / fp.phi);
     assert (cut_edges <= 4 * flow_iter);
 
@@ -2235,6 +2237,7 @@ connected_component_from_cut(GraphContext& gc_orig, set<Node> A)
     return R;
 }
 
+//Q: not used. should be min element
 set<Node>
 cut_from_cm(GraphContext& gc, Configuration config)
 {
