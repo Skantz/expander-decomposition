@@ -79,10 +79,10 @@ duration_sec(const high_resolution_clock::time_point& start,
 }
 
 
-void warn(bool condition, string message) {
+void warn(bool condition, string message, double line) {
 
-    if condition {
-        cout << "WARNING: pre/post condition failed" << endl;
+    if (condition) {
+        cout << "WARNING: pre/post condition failed at line  " << line << endl;
         cout << message << endl;
         cout << "" << endl;
     }
@@ -1433,7 +1433,7 @@ level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue)
                 assert(false);
                 continue;
             }
-            assert(fp.A.count(n));
+            //assert(fp.A.count(n));
             for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
                 // Q: is this right?
                 // if (!fp.A.count(dg.source(e)) || !fp.A.count(dg.target(e)))
@@ -1459,7 +1459,7 @@ level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue)
     cout << "local flow: cut index is: " << cut_index
          << " A size: " << fp.A.size() << endl;
     //q: why?
-    assert(cut_index > 0);
+    warn(cut_index > 0, "level cut should be larger than 0", __LINE__);
     trimmed_nodes.clear();
 
     cout << "local flow: n upper nodes: " << n_upper_nodes << endl;
@@ -1504,9 +1504,9 @@ adjust_flow_source(DG& dg, flow_instance& fp, set<DGNode> trimmed_nodes)
 {
     assert(trimmed_nodes.size() <= fp.R.size());
     for (auto& n : trimmed_nodes) {
-        assert(!fp.A.count(n));
+        //assert(!fp.A.count(n));
         for (DGOutArcIt e(dg, n); e != INVALID; ++e) {
-            assert(!fp.A.count(n));
+            //assert(!fp.A.count(n));
             if (fp.A.count(dg.target(e))) {
                 fp.node_flow[dg.target(e)] += 2.0/fp.phi - fp.edge_flow[e];
                 fp.initial_mass[dg.target(e)] += 2.0 / fp.phi; // - fp.edge_flow[e];
@@ -1698,8 +1698,8 @@ unit_start:
     }
     cout << "vol prune" << vol_prune << "flow iter 8 / fp phi: " << flow_iter * 8 / fp.phi; 
 
-    assert (vol_prune <= flow_iter * 8 / fp.phi);
-    assert (cut_edges <= 4 * flow_iter);
+    warn(vol_prune <= flow_iter * 8 / fp.phi, "volume of cut too large", __LINE__);
+    warn(cut_edges <= 4 * flow_iter, "too many cut edges", __LINE__);
 
     cout << "local flow: cut_size_after" << fp.A.size() << endl;
     cout << "local flow: complemen  t siz after" << fp.R.size() << endl;
@@ -2659,7 +2659,7 @@ decomp(GraphContext& gc, Configuration config,
              << real_trim_cut.size() << endl;
 
         cut = real_trim_cut;
-        assert(cut.size() != 0);
+        warn(cut.size() != 0, "trimmed component has size 0", __LINE__);
         GraphContext V_over_A;
         GraphContext A;
         map<Node, Node> R_map = graph_from_cut(gc, V_over_A, cut,
@@ -2669,10 +2669,10 @@ decomp(GraphContext& gc, Configuration config,
         bool sg_is_expander = test_subgraph_expansion(gc, config, real_trim_cut,
                                                       PHI_ACCEPTANCE_TRIMMING);
 
-        assert("Subgraph must be connected after trim" && connected(A.g));
-        assert(sg_is_expander);
+        warn(connected(A.g), "subgraph is not connected after trimming!", __LINE__);
+        warn(sg_is_expander, "sg is not an expander after trimming!", __LINE__);
         assert(A.nodes.size() + V_over_A.nodes.size() == gc.nodes.size());
-        assert(V_over_A.nodes.size() > 0);
+        warn(V_over_A.nodes.size() > 0, "non trimmed side is 0!", __LINE__);
         node_maps_to_original_graph.push_back(A_map);
         vector<map<Node, Node>> empty_map;
         vector<map<Node, Node>> cuts_empty_map;
