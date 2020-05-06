@@ -78,6 +78,18 @@ duration_sec(const high_resolution_clock::time_point& start,
     return duration_cast<microseconds>(stop - start).count() / MICROSECS;
 }
 
+
+void warn(bool condition, string message) {
+
+    if condition {
+        cout << "WARNING: pre/post condition failed" << endl;
+        cout << message << endl;
+        cout << "" << endl;
+    }
+
+    return;
+}
+
 struct InputConfiguration {
     bool load_from_file = false;
     string file_name = "";
