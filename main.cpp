@@ -3014,11 +3014,13 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length
         assert(gc.g.id(n) < gc.nodes.size());
         nbors_lst.push_back(vector<Node>());
         for (OutArcIt e(gc.g, n); e != INVALID; ++e) {
+            assert(gc.g.id(gc.g.target(e)) < gc.nodes.size() && gc.g.id(gc.g.target(e)) >= 0);
             nbors_lst[nbors_lst.size() - 1].push_back(gc.g.target(e));
             c++;
         }
         nbors[n] = c;
     }
+    assert (nbors.size() == nbors_lst.size() && nbors_lst.size() == gc.nodes.size());
 
     int sum_c = 0;
     for (int i = 0; i < n_trials; i++) {
@@ -3034,9 +3036,10 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length
             random_device rd_;
             default_random_engine r_engine_(rd_());
             int next_index = random_nbor_index(r_engine_);
-            cout <<  gc.g.id(curr_node) << " "  << gc.nodes.size()  << endl;
-            assert( gc.g.id(curr_node) < gc.nodes.size() && next_index < gc.nodes.size());
+            cout <<  gc.g.id(curr_node) << " "  << gc.nodes.size()  <<  "..." << next_index <<  " / " << nbors_lst[gc.g.id(curr_node)].size() <<  endl;
+            assert( gc.g.id(curr_node) < gc.nodes.size() && gc.g.id(curr_node) < nbors_lst.size() && next_index < gc.nodes.size());
             counts[gc.g.id(curr_node)]++;
+            assert (0 <= next_index <= nbors_lst[gc.g.id(curr_node)].size());
             curr_node = nbors_lst[gc.g.id(curr_node)][next_index];
             n_steps++;
             sum_c++;
