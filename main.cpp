@@ -81,7 +81,7 @@ duration_sec(const high_resolution_clock::time_point& start,
 
 void warn(bool condition, string message, double line) {
 
-    if (condition) {
+    if (!condition) {
         cout << "WARNING: pre/post condition failed at line  " << line << endl;
         cout << message << endl;
         cout << "" << endl;
@@ -1696,7 +1696,7 @@ unit_start:
                 cut_edges += 1;  
         }
     }
-    cout << "vol prune" << vol_prune << "flow iter 8 / fp phi: " << flow_iter * 8 / fp.phi; 
+    cout << "vol prune: " << vol_prune << "  flow iter 8 / fp phi: " << flow_iter * 8 / fp.phi << endl; 
 
     warn(vol_prune <= flow_iter * 8 / fp.phi, "volume of cut too large", __LINE__);
     warn(cut_edges <= 4 * flow_iter, "too many cut edges", __LINE__);
@@ -2992,6 +2992,76 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
 
 
 
+double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length, int n_trials) {
+
+    //Q: fix this
+    assert(cut.size() == gc.nodes.size());
+
+    uniform_int_distribution<int> random_int(0, gc.nodes.size() - 1);
+    random_device rd;
+    default_random_engine r_engine(rd());
+
+    //double node_fraction_to_remove = random_fraction(r_engine);
+    //cout << node_fraction_to_remove << " fraction" << endl;
+
+    vector<int> counts;
+    vector<vector<Node>> nbors_lst;
+
+    map<Node, int> nbors;
+    for (NodeIt n(gc.g); n != INVALID; ++n) {
+        counts.push_back(0);
+        int c = 0;
+        assert(gc.g.id(n) < gc.nodes.size());
+        nbors_lst.push_back(vector<Node>());
+        for (OutArcIt e(gc.g, n); e != INVALID; ++e) {
+            nbors_lst[nbors_lst.size() - 1].push_back(gc.g.target(e));
+            c++;
+        }
+        nbors[n] = c;
+    }
+
+    int sum_c = 0;
+    for (int i = 0; i < n_trials; i++) {
+        int n_steps = 0;
+        int start_node_index = random_int(r_engine);
+
+        Node curr_node = gc.g.nodeFromId(start_node_index);
+
+        while (n_steps < walk_length) {
+            assert (nbors[curr_node] >= 0);
+            uniform_int_distribution<int> random_nbor_index(0, nbors[curr_node] - 1);
+            if (nbors[curr_node] <= 1) continue;
+            random_device rd_;
+            default_random_engine r_engine_(rd_());
+            int next_index = random_nbor_index(r_engine_);
+            cout <<  gc.g.id(curr_node) << " "  << gc.nodes.size()  << endl;
+            assert( gc.g.id(curr_node) < gc.nodes.size() && next_index < gc.nodes.size());
+            counts[gc.g.id(curr_node)]++;
+            curr_node = nbors_lst[gc.g.id(curr_node)][next_index];
+            n_steps++;
+            sum_c++;
+        }
+    }
+
+    cout << "sum c: " << sum_c << " gc nodes " << gc.nodes.size() * walk_length * n_trials << endl;
+    //assert (sum_c == gc.nodes.size() * walksum c_length * n_trials);
+
+    double l1_dist = 0.;
+    for (int i = 0; i < gc.nodes.size(); i++) {
+        double d = abs(1./gc.nodes.size() - ((1. * counts[i]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* gc.nodes.size())) / ( 1.*nbors[gc.g.nodeFromId(i)]));
+        assert (counts[i]/n_trials/walk_length <= 1);
+        //cout << d << endl;  
+        assert (0. <= d && d <= 1.);
+        //cout << d << endl;
+        l1_dist += d;
+    }
+    assert(l1_dist <= 1);
+    
+    return l1_dist; 
+}
+
+
+
 void
 test_expander(GraphContext& gc, Configuration conf, double phi)
 {
@@ -3001,9 +3071,16 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
     // butterfly_test(conf, 20, 500, 2, 1);
     // butterfly_test(conf, 100, 100, 1, 1);
     // butterfly_test(conf, 200, 200, 2, 2);
-    double phi_ratio_target = 0.16;
-    test_connect_subgraph(gc, conf, phi);
-    //test_expander_ratio(gc, conf, phi_ratio_target);
+
+    set<Node> full_graph_cut;
+    for (NodeIt n(gc.g); n!= INVALID; ++n) {
+        full_graph_cut.insert(n);
+    }
+    double l1_from_uniform = random_walk_distribution(gc, full_graph_cut, 10,10000);
+    cout << "l1 dist from uniform: " << l1_from_uniform << endl;
+
+
+    
     return;
 }
 
@@ -3044,6 +3121,7 @@ nodes_to_remove) {
 
 }
 */
+
 
 int
 main(int argc, char** argv)
@@ -3146,7 +3224,6 @@ main(int argc, char** argv)
     }
 
 
-
     int i = 0;
     for (auto& c : cuts_node_vector) {
         cout << "decomp cluster " << i << ";";
@@ -3160,14 +3237,20 @@ main(int argc, char** argv)
 
     for (auto& t : stats.traces) {
         cout << "vol cut/vol graph ratio;" << t.cut_vol_ratio << endl;
-        ;
     }
     for (auto& t : stats.traces) {
         cout << "decomp depth;" << t.depth << endl;
     }
 
-    for (const auto& r : node_ratio_edges_inside)
+    i = 0;
+    for (const auto& r : node_ratio_edges_inside) {
         cout << "inside cluster vol/total vol cluster;" << r << endl;
+        double goal = 1 - config.G_phi_target *  stats.traces[i].depth;
+        assert (0.0 <= goal && goal <= 1.0);
+        assert ((0.0 < goal && goal < 1.0) || config.G_phi_target == 0 || config.G_phi_target == 1);
+        assert (r >= goal);
+        i++;
+    }
 
     cout << "graph;" << config.input.file_name << endl;
     cout << "nodes;" << gc.nodes.size() << endl;
