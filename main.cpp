@@ -3004,43 +3004,49 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length
     //double node_fraction_to_remove = random_fraction(r_engine);
     //cout << node_fraction_to_remove << " fraction" << endl;
 
-    vector<int> counts;
-    vector<vector<Node>> nbors_lst;
-
+    map<Node, int> counts;
+    map<Node, vector<Node>> nbors_lst;
     map<Node, int> nbors;
+
+    int tot_c = 0;
     for (NodeIt n(gc.g); n != INVALID; ++n) {
-        counts.push_back(0);
+        counts[n] = 0;
+        assert (0 <= gc.g.id(n) && gc.g.id(n) < gc.nodes.size());
+        nbors_lst[n] = vector<Node>();
         int c = 0;
-        assert(gc.g.id(n) < gc.nodes.size());
-        nbors_lst.push_back(vector<Node>());
-        for (OutArcIt e(gc.g, n); e != INVALID; ++e) {
+        for (IncEdgeIt e(gc.g, n); e != INVALID; ++e) {
             assert(gc.g.id(gc.g.target(e)) < gc.nodes.size() && gc.g.id(gc.g.target(e)) >= 0);
-            nbors_lst[nbors_lst.size() - 1].push_back(gc.g.target(e));
+            nbors_lst[n].push_back(gc.g.target(e));
             c++;
         }
         nbors[n] = c;
+        tot_c += c;
+        assert(nbors[n] == nbors_lst[n].size());
     }
+    assert (tot_c == gc.num_edges * 2);
     assert (nbors.size() == nbors_lst.size() && nbors_lst.size() == gc.nodes.size());
 
     int sum_c = 0;
     for (int i = 0; i < n_trials; i++) {
         int n_steps = 0;
         int start_node_index = random_int(r_engine);
-
-        Node curr_node = gc.g.nodeFromId(start_node_index);
-
-        while (n_steps < walk_length) {
+        Node curr_node = gc.nodes[start_node_index];
+        cout << "start trial n " << i << endl;
+        for (int j = 0; j < walk_length; j++) {
             assert (nbors[curr_node] >= 0);
+            assert(gc.g.id(curr_node) < nbors.size());
             uniform_int_distribution<int> random_nbor_index(0, nbors[curr_node] - 1);
             if (nbors[curr_node] <= 1) continue;
             random_device rd_;
             default_random_engine r_engine_(rd_());
             int next_index = random_nbor_index(r_engine_);
-            cout <<  gc.g.id(curr_node) << " "  << gc.nodes.size()  <<  "..." << next_index <<  " / " << nbors_lst[gc.g.id(curr_node)].size() <<  endl;
+            //cout << "nbors[curr_node] - 1: " << nbors[curr_node] - 1 << endl;
+            //cout <<  gc.g.id(curr_node) << " "  << gc.nodes.size()  <<  "..." << next_index <<  " / " << nbors_lst[curr_node].size() - 1 <<  endl;
+            assert (next_index < nbors_lst[curr_node].size());
             assert( gc.g.id(curr_node) < gc.nodes.size() && gc.g.id(curr_node) < nbors_lst.size() && next_index < gc.nodes.size());
-            counts[gc.g.id(curr_node)]++;
-            assert (0 <= next_index <= nbors_lst[gc.g.id(curr_node)].size());
-            curr_node = nbors_lst[gc.g.id(curr_node)][next_index];
+            counts[curr_node]++;
+            assert (0 <= next_index <= nbors_lst[curr_node].size());
+            curr_node = nbors_lst[curr_node][next_index];
             n_steps++;
             sum_c++;
         }
@@ -3050,9 +3056,21 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length
     //assert (sum_c == gc.nodes.size() * walksum c_length * n_trials);
 
     double l1_dist = 0.;
-    for (int i = 0; i < gc.nodes.size(); i++) {
-        double d = abs(1./gc.nodes.size() - ((1. * counts[i]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* gc.nodes.size())) / ( 1.*nbors[gc.g.nodeFromId(i)]));
-        assert (counts[i]/n_trials/walk_length <= 1);
+    double uniform_expectation = 1./gc.nodes.size();
+    double total_visited_nodes = 1. * n_trials * walk_length;
+    double mean_degree = 2. * gc.num_edges / (1. * gc.nodes.size());
+    double norm_term = (1. * total_visited_nodes) / (1. *gc.nodes.size());
+    for (NodeIt n(gc.g); n != INVALID; ++n) {
+        //double d = abs(1./gc.nodes.size() - ((1. * counts[n]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* gc.nodes.size())) / ( 1.*nbors[gc.g.nodeFromId(i)]));
+        double vertex_norm = mean_degree / (1. * nbors[n]);
+        double ratio_visited_this_node = (1. * counts[n]) / (1. *gc.nodes.size());
+        double d = abs(uniform_expectation - ((ratio_visited_this_node / vertex_norm)  / norm_term));
+        //double d = abs(uniform_expectation - counts[n])
+        cout << "ratio visited this node: " << ratio_visited_this_node << " norm term " << norm_term << " " << vertex_norm << endl;
+        cout << d << endl;
+        cout << uniform_expectation << " - " << (ratio_visited_this_node / norm_term  * vertex_norm) << endl;
+        cout << "count/expected: " << counts[n] << " " << uniform_expectation * total_visited_nodes * vertex_norm << endl;
+        assert (counts[n]/n_trials/walk_length <= 1);
         //cout << d << endl;  
         assert (0. <= d && d <= 1.);
         //cout << d << endl;
@@ -3079,7 +3097,12 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
     for (NodeIt n(gc.g); n!= INVALID; ++n) {
         full_graph_cut.insert(n);
     }
-    double l1_from_uniform = random_walk_distribution(gc, full_graph_cut, 10,10000);
+
+    int walk_length = log2(gc.nodes.size());
+    int n_trials = 100 * gc.nodes.size() / walk_length;
+    //walk_length * n_trials = 100 * gc nodes.size;
+    cout << "start random walk of length " << walk_length << " with n trials: " << n_trials << endl;
+    double l1_from_uniform = random_walk_distribution(gc, full_graph_cut, walk_length,n_trials);
     cout << "l1 dist from uniform: " << l1_from_uniform << endl;
 
 
