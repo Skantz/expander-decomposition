@@ -3064,12 +3064,14 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length
         //double d = abs(1./gc.nodes.size() - ((1. * counts[n]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* gc.nodes.size())) / ( 1.*nbors[gc.g.nodeFromId(i)]));
         double vertex_norm = mean_degree / (1. * nbors[n]);
         double ratio_visited_this_node = (1. * counts[n]) / (1. *gc.nodes.size());
-        double d = abs(uniform_expectation - ((ratio_visited_this_node / vertex_norm)  / norm_term));
-        //double d = abs(uniform_expectation - counts[n])
+        double d_s = uniform_expectation - ((ratio_visited_this_node * vertex_norm)  / norm_term);
+        double d = abs(d_s);
+        /*
         cout << "ratio visited this node: " << ratio_visited_this_node << " norm term " << norm_term << " " << vertex_norm << endl;
         cout << d << endl;
-        cout << uniform_expectation << " - " << (ratio_visited_this_node / norm_term  * vertex_norm) << endl;
-        cout << "count/expected: " << counts[n] << " " << uniform_expectation * total_visited_nodes * vertex_norm << endl;
+        cout << uniform_expectation << " - " << (ratio_visited_this_node * vertex_norm / norm_term  ) << " = " << d_s  << endl;
+        cout << "count/expected: " << counts[n] << " " << uniform_expectation * total_visited_nodes / vertex_norm << endl;
+        */
         assert (counts[n]/n_trials/walk_length <= 1);
         //cout << d << endl;  
         assert (0. <= d && d <= 1.);
