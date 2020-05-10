@@ -374,7 +374,7 @@ parse_chaco_format(const string& filename, ListGraph& g, vector<Node>& nodes)
             //Q: is this right?
             //Ignore multi-edges unless self-loop
             //If self loop add twice to correctly initialize degree
-            if (true) { //(findEdge(g, u, v) == INVALID || u == v) {
+            if  (findEdge(g, u, v) == INVALID || u == v) {
                 g.addEdge(u, v);
             }
             //if (u == v)
@@ -382,12 +382,14 @@ parse_chaco_format(const string& filename, ListGraph& g, vector<Node>& nodes)
         }
     }
 
+    /*
     if (n_verts % 2 != 0) {
         l.progress() << "Odd number of vertices, adding extra one." << endl;
         Node n = g.addNode();
         g.addEdge(nodes[0], n);
         nodes.push_back(n);
     }
+    */
 }
 
 void
@@ -957,11 +959,11 @@ struct CutMatching {
     sub_volume_treshold()
     {
         // return config.volume_treshold_factor * sgc.origContext.nodes.size();
-        if (config.h_ratio)
+        if (config.h_ratio > 0)
             return sgc.origContext.num_edges * config.h_ratio;
         else
             return (double(sgc.origContext.num_edges) /
-                    (10 * config.volume_treshold_factor *
+                    (10. * config.volume_treshold_factor *
                      pow(log2(sgc.origContext.num_edges), 2)));
     }
 
@@ -1045,8 +1047,8 @@ struct CutMatching {
                      << endl;
         // Q: >, >=?
         report->relatively_balanced = report->volume >= sub_volume_treshold();
-        // cout << "Volume is: " << report->volume << " Threshold is: " <<
-        // sub_volume_treshold() << endl;
+        cout << "Volume is: " << report->volume << " Threshold is: " <<
+            sub_volume_treshold() << endl;
         return move(report);
         // Thing is, the cut is not a "materialized cut" in the subdiv graph.
         // But the stats we want are the implied cut on the orig graph.
@@ -1977,11 +1979,7 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut)
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0)
                 sum_all_edges++;
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
-                g.g.source(a) <
-                    g.g.target(
-                        a)) {  // findEdge(sg.g, reverse_map[g.g.source(a)],
-                               // reverse_map[g.g.target(a)]) == INVALID) {
-                               // //Edge inside cut
+                g.g.source(a) < g.g.target( a)) { 
                 assert(reverse_map[n] !=
                        reverse_map[g.g.target(a)]);  // no self -loop
                 assert(sg.g.id(reverse_map[g.g.source(a)]) < sg.nodes.size() &&
@@ -1992,18 +1990,16 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut)
             }
             // Add self-oops ?
             else if (cut.count(g.g.target(a)) == 0 &&
-                     cut.count(g.g.source(a)) > 0 &&
-                     g.g.source(a) <
-                         g.g.target(
-                             a)) {  //&& findEdge(sg.g,
-                                    // reverse_map[g.g.source(a)],
-                                    // reverse_map[g.g.target(a)]) == INVALID) {
+                cut.count(g.g.source(a)) > 0 &&
+                g.g.source(a) <
+                g.g.target(a)) {
                 sg.g.addEdge(reverse_map[g.g.source(a)],
                              reverse_map[g.g.source(a)]);
                 sg.num_edges++;
             }
         }
     }
+    sg.num_edges = countEdges(sg.g);
     return;
 }
 
@@ -2064,8 +2060,7 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut,
             }
         }
     }
-    cout << "(this is BS?) after decomp on cut with e: " << sum_all_edges
-         << " retains: " << sg.num_edges << "(assert this after)" << endl;
+
     return new_map;
 }
 
@@ -2452,7 +2447,7 @@ cut_volume(GraphContext& gc, set<Node> cut)
 struct decomp_trace {
     int depth = 0;
     int size = 0;
-    double cut_vol_ratio;
+    double cut_vol_ratio = -1;
 };
 
 struct decomp_stats {
@@ -2461,6 +2456,7 @@ struct decomp_stats {
     int n_trims = 0;
     double time_in_cm = 0.;
     double time_in_fl = 0.;
+    double time_in_fl_tests = 0.;
     vector<decomp_trace> traces;
 };
 
@@ -2569,22 +2565,22 @@ decomp(GraphContext& gc, Configuration config,
     cut = connected_component_from_cut(gc, cut);
     int cut_vol = cut_volume(gc, cut);
 
-    double h = double(gc.num_edges) / (10 * config.volume_treshold_factor *
+    double h = double(gc.num_edges) / (10. *
                                        pow(log2(gc.num_edges), 2));
 
-    if ((1. - config.h_ratio) * gc.num_edges >= cut_vol / 2 &&
-        cut_vol / 2 >= config.h_ratio * gc.num_edges) {
+    if ((1. - config.h_ratio) * gc.num_edges >= cut_vol / 2. &&
+        cut_vol / 2. >= config.h_ratio * gc.num_edges) {
         balanced = true;
     }
-    else if (config.h_ratio == 0 && gc.num_edges - h >= cut_vol / 2 &&
-             cut_vol / 2 >= h) {
+    else if (config.h_ratio == 0 && gc.num_edges - h >= cut_vol / 2. &&
+             cut_vol / 2. >= h) {
         balanced = true;
     }
     else {
         balanced = false;
     }
 
-    trace.cut_vol_ratio = 1.0 * cut_vol / (2. * gc.num_edges);
+    trace.cut_vol_ratio = !cm_res.reached_H_target? 1.0 * cut_vol / (2. * gc.num_edges) : -1;
     cout << "cut vol: " << cut_vol << " gc num edges " << gc.num_edges
          << " balanced?: " << balanced << ": " << endl;
     cout << "h ratio " << config.h_ratio << " "
@@ -2658,21 +2654,35 @@ decomp(GraphContext& gc, Configuration config,
         cout << "After local flow (real), cut is reduced to n nodes: "
              << real_trim_cut.size() << endl;
 
-        cut = real_trim_cut;
-        warn(cut.size() != 0, "trimmed component has size 0", __LINE__);
+
         GraphContext V_over_A;
         GraphContext A;
-        map<Node, Node> R_map = graph_from_cut(gc, V_over_A, cut,
+        map<Node, Node> R_map = graph_from_cut(gc, V_over_A, real_trim_cut,
                                                map_to_original_graph, true);
-        map<Node, Node> A_map = graph_from_cut(gc, A, cut,
+        map<Node, Node> A_map = graph_from_cut(gc, A, real_trim_cut,
                                                map_to_original_graph, false);
-        bool sg_is_expander = test_subgraph_expansion(gc, config, real_trim_cut,
-                                                      PHI_ACCEPTANCE_TRIMMING);
 
-        warn(connected(A.g), "subgraph is not connected after trimming!", __LINE__);
-        warn(sg_is_expander, "sg is not an expander after trimming!", __LINE__);
+        if (real_trim_cut.size() < cut.size() && config.decompose_with_tests) { 
+            auto start3 = now();
+            bool sg_is_expander = test_subgraph_expansion(gc, config, real_trim_cut,
+                                                        PHI_ACCEPTANCE_TRIMMING);
+
+
+            warn(connected(A.g), "subgraph is not connected after trimming!", __LINE__);
+            warn(sg_is_expander, "sg is not an expander after trimming!", __LINE__);
+            auto stop3 = now();
+            stats.time_in_fl_tests += duration_sec(start3, stop3);
+        }
+
+
+        cut = real_trim_cut;
         assert(A.nodes.size() + V_over_A.nodes.size() == gc.nodes.size());
         warn(V_over_A.nodes.size() > 0, "non trimmed side is 0!", __LINE__);
+        warn(cut.size() == 0, "trimmed component has size 0", __LINE__);
+
+
+
+
         node_maps_to_original_graph.push_back(A_map);
         vector<map<Node, Node>> empty_map;
         vector<map<Node, Node>> cuts_empty_map;
@@ -2793,7 +2803,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     double h_ratio = conf.h_ratio;
     if (h_ratio <= 0.) {
         h_ratio = (double(gc.num_edges) /
-                    (10 * conf.volume_treshold_factor *
+                    (10. * conf.volume_treshold_factor *
                      pow(log2(gc.num_edges), 2))) / gc.nodes.size();
     cout << "local flow:, set h_ratio to " << h_ratio << endl;
     }
@@ -2868,8 +2878,8 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
         cm_res_fast.best_conductance = 1;
     
     double h = double(gc.num_edges) /
-                    (10 * 1 *
-                     pow(log2(gc.num_edges), 2));
+                    (10. * 1. *
+                     pow(log2(1. * gc.num_edges), 2));
 
     cout << "===" << endl;
     if (connected(sg.g)) {
@@ -2992,7 +3002,7 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
 
 
 
-double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length, int n_trials) {
+double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_length, int n_trials, int check_convergence_every_n, double tolerance) {
 
     //Q: fix this
     assert(cut.size() == gc.nodes.size());
@@ -3025,18 +3035,21 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length
     }
     assert (tot_c == gc.num_edges * 2);
     assert (nbors.size() == nbors_lst.size() && nbors_lst.size() == gc.nodes.size());
-
     int sum_c = 0;
+    double old_l1_dist = 1;
+    double l1_dist = 1;
+    int n_steps = 0;
     for (int i = 0; i < n_trials; i++) {
-        int n_steps = 0;
+        n_steps = 0;
         int start_node_index = random_int(r_engine);
+
         Node curr_node = gc.nodes[start_node_index];
-        cout << "start trial n " << i << endl;
         for (int j = 0; j < walk_length; j++) {
-            assert (nbors[curr_node] >= 0);
+            assert (nbors[curr_node] >= 1);
+            if (nbors_lst[curr_node][0] == curr_node) assert(nbors[curr_node] > 1);
             assert(gc.g.id(curr_node) < nbors.size());
             uniform_int_distribution<int> random_nbor_index(0, nbors[curr_node] - 1);
-            if (nbors[curr_node] <= 1) continue;
+            //if (nbors[curr_node] <= 1) continue;
             random_device rd_;
             default_random_engine r_engine_(rd_());
             int next_index = random_nbor_index(r_engine_);
@@ -3049,38 +3062,48 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, int walk_length
             curr_node = nbors_lst[curr_node][next_index];
             n_steps++;
             sum_c++;
+ 
+            if (j % check_convergence_every_n == 0) {
+                l1_dist = 0.;
+                double uniform_expectation = 1./gc.nodes.size();
+                double total_visited_nodes = 1. * n_trials * walk_length;
+                double mean_degree = 2. * gc.num_edges / (1. * gc.nodes.size());
+                double norm_term = (1. * total_visited_nodes) / (1. *gc.nodes.size());
+                for (NodeIt n(gc.g); n != INVALID; ++n) {
+                    //double d = abs(1./gc.nodes.size() - ((1. * counts[n]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* gc.nodes.size())) / ( 1.*nbors[gc.g.nodeFromId(i)]));
+                    double vertex_norm = mean_degree / (1. * nbors[n]);
+                    double ratio_visited_this_node = (1. * counts[n]) / (1. *gc.nodes.size());
+                    double d_s = uniform_expectation - ((ratio_visited_this_node * vertex_norm)  / norm_term);
+                    double d = abs(d_s);
+                    /*
+                    cout << "ratio visited this node: " << ratio_visited_this_node << " norm term " << norm_term << " " << vertex_norm << endl;
+                    cout << d << endl;
+                    cout << uniform_expectation << " - " << (ratio_visited_this_node * vertex_norm / norm_term  ) << " = " << d_s  << endl;
+                    cout << "count/expected: " << counts[n] << " " << uniform_expectation * total_visited_nodes / vertex_norm << endl;
+                    */
+                    assert (counts[n]/n_trials/walk_length <= 1);
+                    //cout << d << endl;  
+                    assert (0. <= d && d <= 1.);
+                    //cout << d << endl;
+                    l1_dist += d;
+                }
+                cout << "after j steps, dist is " << l1_dist << endl;
+                cout << "rate of convergence /nodes /steps:" << gc.nodes.size() * (old_l1_dist - l1_dist) /check_convergence_every_n << endl;
+                old_l1_dist = l1_dist;
+            }
+
+        if (l1_dist <= tolerance)
+            break;
         }
     }
 
-    cout << "sum c: " << sum_c << " gc nodes " << gc.nodes.size() * walk_length * n_trials << endl;
+    //cout << "sum c: " << sum_c << " gc nodes " << gc.nodes.size() * walk_length * n_trials << endl;
     //assert (sum_c == gc.nodes.size() * walksum c_length * n_trials);
-
-    double l1_dist = 0.;
-    double uniform_expectation = 1./gc.nodes.size();
-    double total_visited_nodes = 1. * n_trials * walk_length;
-    double mean_degree = 2. * gc.num_edges / (1. * gc.nodes.size());
-    double norm_term = (1. * total_visited_nodes) / (1. *gc.nodes.size());
-    for (NodeIt n(gc.g); n != INVALID; ++n) {
-        //double d = abs(1./gc.nodes.size() - ((1. * counts[n]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* gc.nodes.size())) / ( 1.*nbors[gc.g.nodeFromId(i)]));
-        double vertex_norm = mean_degree / (1. * nbors[n]);
-        double ratio_visited_this_node = (1. * counts[n]) / (1. *gc.nodes.size());
-        double d_s = uniform_expectation - ((ratio_visited_this_node * vertex_norm)  / norm_term);
-        double d = abs(d_s);
-        /*
-        cout << "ratio visited this node: " << ratio_visited_this_node << " norm term " << norm_term << " " << vertex_norm << endl;
-        cout << d << endl;
-        cout << uniform_expectation << " - " << (ratio_visited_this_node * vertex_norm / norm_term  ) << " = " << d_s  << endl;
-        cout << "count/expected: " << counts[n] << " " << uniform_expectation * total_visited_nodes / vertex_norm << endl;
-        */
-        assert (counts[n]/n_trials/walk_length <= 1);
-        //cout << d << endl;  
-        assert (0. <= d && d <= 1.);
-        //cout << d << endl;
-        l1_dist += d;
+    //assert(l1_dist <= 1);
+    if (l1_dist > tolerance) {
+        cout << "did not converge" << endl;
     }
-    assert(l1_dist <= 1);
-    
-    return l1_dist; 
+    return n_steps;
 }
 
 
@@ -3100,12 +3123,17 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
         full_graph_cut.insert(n);
     }
 
-    int walk_length = log2(gc.nodes.size());
-    int n_trials = 100 * gc.nodes.size() / walk_length;
+    //int walk_length = log2(gc.nodes.size());
+    //int n_trials = 100 * gc.nodes.size() / walk_length;
+    int n_trials = 1;
+    long walk_length = 100000 * gc.nodes.size();
     //walk_length * n_trials = 100 * gc nodes.size;
     cout << "start random walk of length " << walk_length << " with n trials: " << n_trials << endl;
-    double l1_from_uniform = random_walk_distribution(gc, full_graph_cut, walk_length,n_trials);
-    cout << "l1 dist from uniform: " << l1_from_uniform << endl;
+    int check_every_n = 100;
+    double tolerance = 0.01;
+    int n_steps = random_walk_distribution(gc, full_graph_cut, walk_length,n_trials, check_every_n, tolerance);
+    cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / gc.nodes.size() << endl;
+    cout << "if == " << walk_length << ", did not converge in time" << endl;
 
 
     
@@ -3169,7 +3197,7 @@ main(int argc, char** argv)
     config.n_nodes_orig = gc.nodes.size();
     config.e_edges_orig = gc.num_edges;
 
-    cout << "n: gc.g.nodes.size()"
+    cout << "n: " << gc.nodes.size()
          << " e: " << gc.num_edges << endl;
     map<Node, Node> map_to_original_graph;
     for (NodeIt n(gc.g); n != INVALID; ++n)
@@ -3195,9 +3223,13 @@ main(int argc, char** argv)
 
     decomp_stats stats;
     decomp_trace trace;
+
+
+    auto start = now();
     vector<map<Node, Node>> cut_maps = decomp(gc, config, map_to_original_graph,
                                               node_maps_to_original_graph,
                                               stats, trace);
+    auto stop = now();
 
     cout << "Done decomp" << endl;
     cout << "output:" << endl;
@@ -3207,6 +3239,7 @@ main(int argc, char** argv)
     vector<int> all_nodes;
 
     int n_singletons = 0;
+    int all_nodes_count = 0;
     vector<vector<Node>> cuts_node_vector;
     for (const auto& m : cut_maps) {
         if (m.size() == 1) {
@@ -3215,11 +3248,13 @@ main(int argc, char** argv)
                              gc.g.id(c.second)) == 0);
                 all_nodes.push_back(gc.g.id(c.second));
             }
+            all_nodes_count++;
             n_singletons++;
             continue;
         }
         cuts_node_vector.push_back(vector<Node>());
         for (const auto& c : m) {
+            all_nodes_count++;
             // cout << gc.g.id(c.second) << " ";
             all_nodes.push_back(gc.g.id(c.second));
             cuts_node_vector[cuts_node_vector.size() - 1].push_back(c.second);
@@ -3227,11 +3262,14 @@ main(int argc, char** argv)
     }
 
     assert(gc.nodes.size() == all_nodes.size());
+    assert(all_nodes_count == all_nodes.size());
 
     // vector<vector<int>> fog(cut_maps.size(), vector<int>(cut_maps.size(),
     // 0));
     vector<double> node_ratio_edges_inside;
 
+    int coms_volume = 0;
+    double max_unbalance = 0.;
     for (int i = 0; i < cuts_node_vector.size(); ++i) {
         // for (const auto &m : cuts_node_vector) {
         double edges_inside_cluster = 0.0;
@@ -3249,11 +3287,16 @@ main(int argc, char** argv)
              << edges_inside_cluster << ";" << all_edges << endl;
         node_ratio_edges_inside.push_back((double)edges_inside_cluster /
                                           (double)all_edges);
+        max_unbalance = max(max_unbalance, all_edges / edges_inside_cluster);
+        max_unbalance = max(max_unbalance, edges_inside_cluster / all_edges);
+        coms_volume += all_edges - edges_inside_cluster;
     }
 
 
     int i = 0;
+    int n_clusters = 0;
     for (auto& c : cuts_node_vector) {
+        n_clusters++;
         cout << "decomp cluster " << i << ";";
         for (auto& n : c) {
             cout << gc.g.id(n) << ";";
@@ -3273,7 +3316,7 @@ main(int argc, char** argv)
     i = 0;
     for (const auto& r : node_ratio_edges_inside) {
         cout << "inside cluster vol/total vol cluster;" << r << endl;
-        double goal = 1 - config.G_phi_target *  stats.traces[i].depth;
+        double goal = pow(config.G_phi_target, stats.traces[i].depth);
         assert (0.0 <= goal && goal <= 1.0);
         assert ((0.0 < goal && goal < 1.0) || config.G_phi_target == 0 || config.G_phi_target == 1);
         assert (r >= goal);
@@ -3288,10 +3331,14 @@ main(int argc, char** argv)
     cout << "unbalance threshold;" << config.h_ratio << endl;
     cout << "time in cm;" << stats.time_in_cm << endl;
     cout << "time in fl;" << stats.time_in_fl << endl;
+    cout << "time testing fl;" << stats.time_in_fl_tests << endl;
     cout << "n local flows;" << stats.n_trims << endl;
     cout << "n cut matches;" << stats.n_cm << endl;
     cout << "n decomps;" << stats.n_decomps << endl;
     cout << "n singletons;" << n_singletons << endl;
+    cout << "coms volume"   << coms_volume << endl;
+    cout << "n clusters" << n_clusters << endl;
+    cout << "total time" << duration_sec(start, stop) << endl;
     cout << "output end" << endl;
 
     ofstream file;
