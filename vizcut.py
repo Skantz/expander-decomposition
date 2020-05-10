@@ -38,6 +38,5 @@ print(colors)
 print(len(colors))
 print(len(G))
 
-nx.draw_networkx(G, with_labels=False, node_color=colors, cmap=plt.get_cmap('Reds'), pos=nx.spring_layout(G))
+nx.draw_networkx(G, with_labels=False, node_color=colors, cmap=plt.cm.Blues, pos=nx.spring_layout(G))
 plt.show()
-
