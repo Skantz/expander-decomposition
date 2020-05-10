@@ -6,36 +6,29 @@ import networkx as nx
 
 def cluster_graph(n_clusters, size_clusters, n_crossing_edges=None):
 
-    if not n_crossing_edges:
-        n_crossing_edges = n_clusters - 1
 
-    cluster_indices = [i for i in range(n_clusters)]
 
     g = nx.Graph(undirected=True)
 
-    nodes_by_cluster = [[size_clusters*j + i for i in range(size_clusters)] for j in range(n_clusters)]
+    nodes_by_cluster = [[size_clusters*j + i for i in range(size_clusters)] for j in range(n_clusters )]
+
     for cluster in nodes_by_cluster:
         g.add_nodes_from(cluster)
-    for cluster in nodes_by_cluster:
-        for i in range(size_clusters):
-            for j in range(i + 1, size_clusters):
-                g.add_edge(cluster[i], cluster[j])
+
+    for i in range(n_clusters):
+        for n1 in nodes_by_cluster[i]:
+            for n2 in nodes_by_cluster[i]:
+                if n1 != n2:
+                    g.add_edge(n1, n2)
 
     #random.shuffle(cluster_indices)
     #1-indexed
     for i in range(n_clusters - 1):
-        g.add_edge(cluster_indices[i]*size_clusters + 1, cluster_indices[i + 1]*size_clusters + 1)
+        g.add_edge(i*size_clusters, (i + 1) * size_clusters)
 
 
-    e_to_add = n_crossing_edges - n_clusters + 1
-    while e_to_add > 0:
-        n1, n2, c1, c2 = random.randint(0, size_clusters - 1), random.randint(0, size_clusters - 1), \
-                         random.randint(0, n_clusters - 1), random.randint(0, n_clusters - 1)
-        o1, o2 = random.randint(0, size_clusters - 1), random.randint(0, size_clusters - 1)
-        if (c1 != c2 and not g.has_edge(n1 + c1*size_clusters + o1, n2 + c2*size_clusters + o2)):
-            g.add_edge(n1 + c1*size_clusters + o1, n2 + c2*size_clusters + o2)
-            e_to_add -= 1
-
+    print(len(g), n_clusters * size_clusters)
+    assert(len(g) == n_clusters * size_clusters)
 
     return g
 
@@ -50,25 +43,52 @@ def margulis_graph(n):
     g.add_nodes_from([i for i in range(n**2)])
 
     adjacency_dict = {}
+
+    #for x in range(n):
+    #    for y in range(n):
+    #        assert ((x, y) not in adjacency_dict)
+    #        adjacency_dict[(x,y)] = []
+    #        for pm in [-1, 1]:
+    #            adjacency_dict[(x, y)] += [(((x + pm * 2*y)) % n, y)]
+    #            adjacency_dict[(x, y)] += [(((x + pm * (2*y + 1)) % n, y))]
+    #            adjacency_dict[(x, y)] += [(x, (y + pm * 2*x) % n)]
+    #            adjacency_dict[(x, y)] += [(x, (y + pm * (2*x + 1)) % n)]
     for x in range(n):
         for y in range(n):
             assert ((x, y) not in adjacency_dict)
             adjacency_dict[(x,y)] = []
             for pm in [-1, 1]:
-                adjacency_dict[(x, y)] += [(((x + pm * 2*y)) % n, y)]
-                adjacency_dict[(x, y)] += [(((x + pm * (2*y + 1)) % n, y))]
+                adjacency_dict[(x, y)] += [((x + pm * 2*y) % n, y)]
+                adjacency_dict[(x, y)] += [((x + pm * (2*y + 1)) % n, y)]
                 adjacency_dict[(x, y)] += [(x, (y + pm * 2*x) % n)]
                 adjacency_dict[(x, y)] += [(x, (y + pm * (2*x + 1)) % n)]
+    
     for k in adjacency_dict:
         assert(len(adjacency_dict[k]) == 8)
-        for v in adjacency_dict[k]:
+        edges_t = []
+        for i, v in enumerate(adjacency_dict[k]):
             s, t = k[0] * n + k[1], v[0]*n + v[1]
             #one-way adjacency representation
             #including self-loops
-            if s not in g.neighbors(t) or s <= t:
-                g.add_edge(s, t)
+            if t > s and s in g.neighbors(t):
+                continue
+
+            edges_t.append((s, t, dict(k=i)))
+            #print(len(list(g.neighbors(k[0]*n + k[1]))))
+        g.add_edges_from(edges_t)
+        assert(len(list(g.neighbors(s))) <= 8)
+        #print(g[s])
+        #assert(len(list(g.neighbors(k[0]*n + k[1]))) == 8))
 
     #assert 8-regular
+    #for n in g:
+    #    print(len(list(g.neighbors(n))))
+    #    #assert(len(list(g.neighbors(n))) == 8)
+    return g
+
+
+def random_d_regular(d, n):
+    g = nx.random_regular_graph(d, n)
     return g
 
 def write_graph(G, f):
@@ -78,14 +98,23 @@ def write_graph(G, f):
         f.write(line.partition(' ')[2])
         f.write("\n")
 
+f = open("random_3_regular_5000.graph", "w+")
+write_graph(random_d_regular(3, 5000), f)
+
 f = open("chordal_cycle_graph_2000.graph", "w+")
 write_graph(expander_graph(2000), f)
 
-f = open("margulis_10000.graph", "w+")
-write_graph(margulis_graph(100), f)
+f = open("margulis_100000.graph", "w+")
+write_graph(margulis_graph(int(100000**0.5)), f)
+
+f = open("nxmargulis_10000.graph", "w+")
+write_graph(nx.margulis_gabber_galil_graph(int(10000**0.5)), f)
 
 f = open("cluster_graph_50_15.graph", "w+")
 write_graph(cluster_graph(5, 50, 10), f)
+
+f = open("cluster_graph_5_5.graph", "w+")
+write_graph(cluster_graph(5, 5, 5), f)
 
 f = open("complete10.graph", "w+")
 write_graph(nx.complete_graph(10), f)
