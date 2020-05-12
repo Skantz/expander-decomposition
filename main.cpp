@@ -1974,25 +1974,27 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut)
     }
 
     int sum_all_edges = 0;
+    int self_loops = 0;
     for (const auto& n : cut) {
         for (IncEdgeIt a(g.g, n); a != INVALID; ++a) {
-            if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0)
+            if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0) 
                 sum_all_edges++;
+                if (g.g.id(g.g.target(a)) == g.g.id(g.g.source(a)))  {self_loops++;}
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
-                g.g.source(a) < g.g.target( a)) { 
-                assert(reverse_map[n] !=
-                       reverse_map[g.g.target(a)]);  // no self -loop
+                g.g.id(g.g.source(a)) < g.g.id(g.g.target( a))) { 
+                //assert(reverse_map[n] !=
+                //       reverse_map[g.g.target(a)]);  // no self -loop
                 assert(sg.g.id(reverse_map[g.g.source(a)]) < sg.nodes.size() &&
                        sg.g.id(reverse_map[g.g.target(a)]) < sg.nodes.size());
                 sg.g.addEdge(reverse_map[g.g.source(a)],
                              reverse_map[g.g.target(a)]);
                 sg.num_edges++;
             }
-            // Add self-oops ?
+            // Self-loops added here
             else if (cut.count(g.g.target(a)) == 0 &&
                 cut.count(g.g.source(a)) > 0 &&
-                g.g.source(a) <
-                g.g.target(a)) {
+                g.g.id(g.g.source(a)) <=
+                g.g.id(g.g.target(a))) {
                 sg.g.addEdge(reverse_map[g.g.source(a)],
                              reverse_map[g.g.source(a)]);
                 sg.num_edges++;
@@ -2041,9 +2043,9 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut,
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0)
                 sum_all_edges++;
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
-                g.g.source(a) < g.g.target(a)) {
-                assert(reverse_map[n] !=
-                       reverse_map[g.g.target(a)]);  // no self -loop
+                g.g.id(g.g.source(a)) < g.g.id(g.g.target(a))) {
+                //assert(reverse_map[n] !=
+                //       reverse_map[g.g.target(a)]);  // no self -loop
                 assert(sg.g.id(reverse_map[g.g.source(a)]) < sg.nodes.size() &&
                        sg.g.id(reverse_map[g.g.target(a)]) < sg.nodes.size());
                 sg.g.addEdge(reverse_map[g.g.source(a)],
@@ -2053,14 +2055,14 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut,
             // Add self-oops ?
             else if (cut.count(g.g.target(a)) == 0 &&
                      cut.count(g.g.source(a)) > 0 &&
-                     g.g.source(a) < g.g.target(a)) {
+                     g.g.id(g.g.source(a)) < g.g.id(g.g.target(a))) {
                 sg.g.addEdge(reverse_map[g.g.source(a)],
                              reverse_map[g.g.source(a)]);
                 sg.num_edges++;
             }
         }
     }
-
+    //sg.num_edges = countEdges(sg.g);
     return new_map;
 }
 
@@ -2302,6 +2304,7 @@ struct cm_result {
     bool last_relatively_balanced;
     double best_volume_ratio;
     double last_volume_ratio;
+    int best_cut_crossing_edges;
 };
 
 void
@@ -2355,7 +2358,9 @@ run_cut_matching(GraphContext& gc, Configuration& config, cm_result& cm_res)
          << best_round->index << endl;
     cout << "Best cut sparsity: " << endl;
     auto& best_cut = best_round->cut;
-    CutStats<G>(gc.g, gc.nodes.size(), *best_cut).print();
+    CutStats<G> cs = CutStats<G>(gc.g, gc.nodes.size(), *best_cut);
+    cs.print();
+    int crossing_edges = cs.crossing_edges;
 
     cm_result cms;
 
@@ -2371,6 +2376,7 @@ run_cut_matching(GraphContext& gc, Configuration& config, cm_result& cm_res)
     cm_res.last_relatively_balanced = last_round->relatively_balanced;
     cm_res.best_volume_ratio = best_round->volume;
     cm_res.last_volume_ratio = best_round->volume;
+    cm_res.best_cut_crossing_edges = crossing_edges;
     return;
 }
 
@@ -2427,6 +2433,7 @@ cut_volume(GraphContext& gc, set<Node> cut)
     };
 
     for (EdgeIt e(gc.g); e != INVALID; ++e) {
+
         if (cut.count(gc.g.u(e)))
             cut_volume += 1;
         if (gc.g.u(e) == gc.g.v(e))
@@ -2435,7 +2442,7 @@ cut_volume(GraphContext& gc, set<Node> cut)
             cut_volume += 1;
     }
 
-    cout << "gc.num_edges " << gc.num_edges << " edges and cut volum "
+    cout << "gc.num_edges " << gc.num_edges << " edges and cut volume "
          << cut_volume << endl;
 
     assert(cut.size() <= gc.nodes.size());
@@ -2518,21 +2525,7 @@ decomp(GraphContext& gc, Configuration config,
         return node_maps_to_original_graph;
     }
 
-    // cout << "con-check, n: " << gc.nodes.size() << " e: " << gc.num_edges <<
-    // endl;
-
     cm_result cm_res;
-
-    /*
-     auto start2 = now();
-     p->runMinCut(); // Note that "startSecondPhase" must be run to get flows
-   for
-                     // individual verts
-     auto stop2 = now();
-     l.progress() << "flow: " << p->flowValue() << " ("
-                  << duration_sec(start2, stop2) << " s)" << endl;
-   }
-   */
     auto start = now();
     run_cut_matching(gc, config, cm_res);
     auto stop = now();
@@ -2543,9 +2536,6 @@ decomp(GraphContext& gc, Configuration config,
     bool cut_is_good = false;
     set<Node> cut;
 
-    //(cm_res.reached_H_target == true && cm_res.best_relatively_balanced)? cut
-    //=
-    // cm_res.best_cut : cut = cm_res.last_cut;
 
     cut = cm_res.best_cut;
     /*
@@ -2601,6 +2591,8 @@ decomp(GraphContext& gc, Configuration config,
 // omp_set_max_active_levels
 
         int t = NUM_THREADS;
+        int edge_count = 0;
+        bool done_recurse;
 #pragma omp parallel for num_threads(t) schedule(dynamic, 1)
         for (int i = 0; i < 2; i++) {
             int thread_num = omp_get_thread_num();
@@ -2610,8 +2602,20 @@ decomp(GraphContext& gc, Configuration config,
 
             GraphContext A;
 
+            bool swtch = i == 1;
             map<Node, Node> new_map = graph_from_cut(
-                gc, A, cut, map_to_original_graph, i == 1);
+                gc, A, cut, map_to_original_graph, swtch);
+            //Q: do this but adjust for self-loops.
+            /*
+            if (i == 0) {
+                cout << "A.num edges" << A.num_edges << endl;
+                cout << "Cut vol /2 " << cut_vol / 2<< endl;
+                cout << "best cut crossing" << cm_res.best_cut_crossing_edges << endl;
+                assert (A.num_edges == cut_vol/ 2);
+            }
+            */
+            edge_count += A.num_edges;
+            cout << "ec" << edge_count << " i " << i << endl;
             // assert (A.nodes.size() == cut.size());
 
             vector<map<Node, Node>> empty_map;
@@ -2621,7 +2625,18 @@ decomp(GraphContext& gc, Configuration config,
             node_maps_to_original_graph.insert(
                 node_maps_to_original_graph.end(), decomp_map.begin(),
                 decomp_map.end());
+            if (i == 1)
+                done_recurse = true;
         }
+        /*
+        cout << "ec" << cut_volume << endl;
+        cout << "ec" << edge_count + cm_res.best_cut_crossing_edges/2 << endl;
+        cout << "ec" << gc.num_edges << endl;
+        
+        //Q: do this but adjust for self loops
+        if (done_recurse)
+            assert(edge_count + cm_res.best_cut_crossing_edges/2 == gc.num_edges);
+        */
     }
 
     // check best cut found so far
