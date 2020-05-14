@@ -3033,6 +3033,8 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
     map<Node, vector<Node>> nbors_lst;
     map<Node, int> nbors;
 
+    vector<double> mixing_rates;
+
     int tot_c = 0;
     for (NodeIt n(gc.g); n != INVALID; ++n) {
         counts[n] = 0;
@@ -3078,32 +3080,54 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
             n_steps++;
             sum_c++;
  
+            double assert_check_max = 0.;
             if (j % check_convergence_every_n == 0) {
                 l1_dist = 0.;
                 double uniform_expectation = 1./gc.nodes.size();
-                double total_visited_nodes = 1. * n_trials * walk_length;
+                assert (uniform_expectation > 0 && uniform_expectation <= 1. / (1. * gc.nodes.size()));
+                double total_visited_nodes = 1. * n_steps;
                 double mean_degree = 2. * gc.num_edges / (1. * gc.nodes.size());
                 double norm_term = (1. * total_visited_nodes) / (1. *gc.nodes.size());
+                assert(uniform_expectation > 0 && total_visited_nodes > 0 && mean_degree > 0 && norm_term > 0);
                 for (NodeIt n(gc.g); n != INVALID; ++n) {
                     //double d = abs(1./gc.nodes.size() - ((1. * counts[n]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* gc.nodes.size())) / ( 1.*nbors[gc.g.nodeFromId(i)]));
                     double vertex_norm = mean_degree / (1. * nbors[n]);
-                    double ratio_visited_this_node = (1. * counts[n]) / (1. *gc.nodes.size());
-                    double d_s = uniform_expectation - ((ratio_visited_this_node * vertex_norm)  / norm_term);
+                    //this can be positive.
+                    double ratio_visited_this_node = (1. * counts[n]) / total_visited_nodes;
+                    //cout << ratio_visited_this_node << endl;
+                    double d_s = uniform_expectation - ((ratio_visited_this_node * vertex_norm)); //  / norm_term);
+                    assert_check_max = max(ratio_visited_this_node * vertex_norm, assert_check_max);
                     double d = abs(d_s);
+                    //cout << uniform_expectation << " - " << (ratio_visited_this_node * vertex_norm) << endl;
                     /*
                     cout << "ratio visited this node: " << ratio_visited_this_node << " norm term " << norm_term << " " << vertex_norm << endl;
                     cout << d << endl;
                     cout << uniform_expectation << " - " << (ratio_visited_this_node * vertex_norm / norm_term  ) << " = " << d_s  << endl;
                     cout << "count/expected: " << counts[n] << " " << uniform_expectation * total_visited_nodes / vertex_norm << endl;
                     */
-                    assert (counts[n]/n_trials/walk_length <= 1);
-                    //cout << d << endl;  
-                    assert (0. <= d && d <= 1.);
+                    assert ((1.*counts[n])/(1.*n_trials)/(1.*walk_length) <= 1);
+                    //cout << d << endl;
+                    //Q: not necessarily true? because of normalization  
+                    //assert (0. <= d && d <= 1.);
                     //cout << d << endl;
                     l1_dist += d;
                 }
-                cout << "after j steps, dist is " << l1_dist << endl;
-                cout << "rate of convergence /nodes /steps:" << gc.nodes.size() * (old_l1_dist - l1_dist) /check_convergence_every_n << endl;
+                assert(assert_check_max >= uniform_expectation);
+                cout << fixed;
+                
+                cout << "after j steps, dist is " << l1_dist << endl; //  gc.nodes.size() * 
+                cout << "rate of convergence /nodes /steps:" <<  gc.nodes.size() * (old_l1_dist - l1_dist) /check_convergence_every_n << endl;
+                /*
+                cout << "nodes size" << gc.nodes.size() << endl;
+                cout << "old." << old_l1_dist << endl;
+                cout << "new" << l1_dist << endl;
+                cout << "every n" << check_convergence_every_n << endl;
+                cout << "change " <<  setprecision(10) << old_l1_dist - l1_dist << endl;
+                */
+                double delta = gc.nodes.size() * (old_l1_dist - l1_dist) / double(check_convergence_every_n);
+                cout << "delta " << delta << endl;
+                //Delta is growing smaller 
+                mixing_rates.push_back(delta);
                 old_l1_dist = l1_dist;
             }
 
@@ -3118,6 +3142,15 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
     if (l1_dist > tolerance) {
         cout << "did not converge" << endl;
     }
+
+    int n = mixing_rates.size();
+    double mixings_sum = 0;
+    for (auto& m: mixing_rates) {
+        mixings_sum += m;
+    }
+
+    cout <<  setprecision(10) << "mean mix rate " << mixings_sum/double(n) << " - " << mixings_sum << "/" << double(n) << endl;
+
     return n_steps;
 }
 
@@ -3144,8 +3177,8 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
     long walk_length = 100000 * gc.nodes.size();
     //walk_length * n_trials = 100 * gc nodes.size;
     cout << "start random walk of length " << walk_length << " with n trials: " << n_trials << endl;
-    int check_every_n = 100;
-    double tolerance = 0.01;
+    int check_every_n = 100000;
+    double tolerance = 0.1;
     int n_steps = random_walk_distribution(gc, full_graph_cut, walk_length,n_trials, check_every_n, tolerance);
     cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / gc.nodes.size() << endl;
     cout << "if == " << walk_length << ", did not converge in time" << endl;
