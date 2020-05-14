@@ -65,7 +65,7 @@ using CutMap = NodeMap<bool>;
 
 #define MAX_PARALLEL_RECURSIVE_LEVEL 10
 
-const int NUM_THREADS = 3;
+const int NUM_THREADS = 4;
 const double MICROSECS = 1000000.0;
 const double PHI_UNREACHABLE = 0.00000001;
 const double PHI_ACCEPTANCE_TRIMMING = 0.166;
@@ -2692,6 +2692,7 @@ decomp(GraphContext& gc, Configuration config,
 
         cut = real_trim_cut;
         assert(A.nodes.size() + V_over_A.nodes.size() == gc.nodes.size());
+        //Q: is this a real error?
         warn(V_over_A.nodes.size() > 0, "non trimmed side is 0!", __LINE__);
         warn(cut.size() == 0, "trimmed component has size 0", __LINE__);
 
@@ -2737,6 +2738,7 @@ butterfly_test(Configuration config, int ls, int rs, int conn_ls, int conn_rs)
         }
     }
     for (int i = ls; i < ls + rs; i++) {
+
         for (int j = i + 1; j < ls + rs; j++) {
             gc.g.addEdge(gc.g.nodeFromId(i), gc.g.nodeFromId(j));
             gc.num_edges++;
@@ -3177,7 +3179,7 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
     long walk_length = 100000 * gc.nodes.size();
     //walk_length * n_trials = 100 * gc nodes.size;
     cout << "start random walk of length " << walk_length << " with n trials: " << n_trials << endl;
-    int check_every_n = 100000;
+    int check_every_n = 1000;
     double tolerance = 0.1;
     int n_steps = random_walk_distribution(gc, full_graph_cut, walk_length,n_trials, check_every_n, tolerance);
     cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / gc.nodes.size() << endl;
@@ -3318,13 +3320,15 @@ main(int argc, char** argv)
 
     int coms_volume = 0;
     double max_unbalance = 0.;
+    int max_size_cluster = 1;
+    int min_size_cluster = 1;
     for (int i = 0; i < cuts_node_vector.size(); ++i) {
         // for (const auto &m : cuts_node_vector) {
         double edges_inside_cluster = 0.0;
-        double all_edges = 0.0;
+        int all_edges = 0;
         for (const auto& n : cuts_node_vector[i]) {
             for (IncEdgeIt e(gc.g, n); e != INVALID; ++e) {
-                all_edges = all_edges + 1.0;
+                all_edges += 1;
                 if (count(cuts_node_vector[i].begin(),
                           cuts_node_vector[i].end(), gc.g.target(e)) > 0) {
                     edges_inside_cluster = edges_inside_cluster + 1.0;
@@ -3335,8 +3339,9 @@ main(int argc, char** argv)
              << edges_inside_cluster << ";" << all_edges << endl;
         node_ratio_edges_inside.push_back((double)edges_inside_cluster /
                                           (double)all_edges);
-        max_unbalance = max(max_unbalance, all_edges / edges_inside_cluster);
-        max_unbalance = max(max_unbalance, edges_inside_cluster / all_edges);
+        max_size_cluster = max(max_size_cluster, all_edges);
+        min_size_cluster = min(min_size_cluster, all_edges);
+        max_unbalance = max(double(max_unbalance), double((1.*max_size_cluster)/(1.*min_size_cluster)));
         coms_volume += all_edges - edges_inside_cluster;
     }
 
@@ -3387,6 +3392,7 @@ main(int argc, char** argv)
     cout << "coms volume"   << coms_volume << endl;
     cout << "n clusters" << n_clusters << endl;
     cout << "total time" << duration_sec(start, stop) << endl;
+    cout << "cluster unbalance" << max_unbalance << endl;
     cout << "output end" << endl;
 
     ofstream file;
