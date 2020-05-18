@@ -21,6 +21,7 @@
 #include <random>
 #include <set>
 #include <vector>
+#include <sstream>
 
 #include "cxxopts.hpp"
 #include "preliminaries.h"
@@ -443,9 +444,9 @@ write_cut(const vector<Node>& nodes, const Cut& cut, string file_name)
     file.close();
 }
 
-void
-read_partition_file(const string& filename, const vector<Node>& nodes,
-                    Cut& partition)
+vector<set<Node>>
+read_partition_file(const string filename, const vector<Node>& nodes,
+                    vector<set<Node>> partition)
 {
     ifstream file;
     file.open(filename);
@@ -453,14 +454,26 @@ read_partition_file(const string& filename, const vector<Node>& nodes,
         cerr << "Unable to read file " << filename << endl;
         exit(1);
     }
-    bool b;
-    size_t i = 0;
-    while (file >> b) {
-        if (b)
-            partition.insert(nodes[i]);
-        ++i;
+
+    ifstream is(filename);
+    string raw_input;
+
+    int n;
+    while( is >> n ) {
+        int iter = 0;
+        while(getline(file, raw_input)) {
+            partition.push_back(set<Node>());
+            istringstream iss(raw_input);
+            int m;
+            while (iss >> m) {
+                cout << m << endl;
+                partition[iter].insert(nodes[m]);
+            }
+            cout << raw_input << endl;
+            iter++;
+        }
     }
-    l.debug() << "Reference patition size: " << partition.size() << endl;
+    return partition;
 }
 
 void
@@ -1047,8 +1060,8 @@ struct CutMatching {
                      << endl;
         // Q: >, >=?
         report->relatively_balanced = report->volume >= sub_volume_treshold();
-        cout << "Volume is: " << report->volume << " Threshold is: " <<
-            sub_volume_treshold() << endl;
+        //cout << "Volume is: " << report->volume << " Threshold is: " <<
+        //    sub_volume_treshold() << endl;
         return move(report);
         // Thing is, the cut is not a "materialized cut" in the subdiv graph.
         // But the stats we want are the implied cut on the orig graph.
@@ -3023,6 +3036,10 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
 
     //Q: fix this
     assert(cut.size() == gc.nodes.size());
+    if (cut.size() == 1){
+        return 1;
+    }
+    assert (cut.size() > 1);
 
     uniform_int_distribution<int> random_int(0, gc.nodes.size() - 1);
     random_device rd;
@@ -3075,7 +3092,11 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
             //cout << "nbors[curr_node] - 1: " << nbors[curr_node] - 1 << endl;
             //cout <<  gc.g.id(curr_node) << " "  << gc.nodes.size()  <<  "..." << next_index <<  " / " << nbors_lst[curr_node].size() - 1 <<  endl;
             assert (next_index < nbors_lst[curr_node].size());
-            assert( gc.g.id(curr_node) < gc.nodes.size() && gc.g.id(curr_node) < nbors_lst.size() && next_index < gc.nodes.size());
+            //Q: is this right
+            //if  (!( gc.g.id(curr_node) < gc.nodes.size() && gc.g.id(curr_node) < nbors_lst.size() && next_index < gc.nodes.size())) {
+            //    cout << "curr node " << gc.g.id(curr_node) << " node size " << gc.nodes.size() << " nbors list size " << nbors_lst.size() << " next index " << next_index << endl;
+            //    assert(false && "random walk indexing failed");
+            //}
             counts[curr_node]++;
             assert (0 <= next_index <= nbors_lst[curr_node].size());
             curr_node = nbors_lst[curr_node][next_index];
@@ -3117,8 +3138,10 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
                 assert(assert_check_max >= uniform_expectation);
                 cout << fixed;
                 
+                /*
                 cout << "after j steps, dist is " << l1_dist << endl; //  gc.nodes.size() * 
                 cout << "rate of convergence /nodes /steps:" <<  gc.nodes.size() * (old_l1_dist - l1_dist) /check_convergence_every_n << endl;
+                */
                 /*
                 cout << "nodes size" << gc.nodes.size() << endl;
                 cout << "old." << old_l1_dist << endl;
@@ -3126,15 +3149,18 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
                 cout << "every n" << check_convergence_every_n << endl;
                 cout << "change " <<  setprecision(10) << old_l1_dist - l1_dist << endl;
                 */
+               
                 double delta = gc.nodes.size() * (old_l1_dist - l1_dist) / double(check_convergence_every_n);
-                cout << "delta " << delta << endl;
+                //cout << "delta " << delta << endl;
                 //Delta is growing smaller 
                 mixing_rates.push_back(delta);
                 old_l1_dist = l1_dist;
             }
 
-        if (l1_dist <= tolerance)
-            break;
+            if (l1_dist <= tolerance) {
+                cout << "done" << endl;
+                break;
+            }
         }
     }
 
@@ -3151,7 +3177,7 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
         mixings_sum += m;
     }
 
-    cout <<  setprecision(10) << "mean mix rate " << mixings_sum/double(n) << " - " << mixings_sum << "/" << double(n) << endl;
+    //cout <<  setprecision(10) << "mean mix rate " << mixings_sum/double(n) << " - " << mixings_sum << "/" << double(n) << endl;
 
     return n_steps;
 }
@@ -3178,14 +3204,47 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
     int n_trials = 1;
     long walk_length = 100000 * gc.nodes.size();
     //walk_length * n_trials = 100 * gc nodes.size;
-    cout << "start random walk of length " << walk_length << " with n trials: " << n_trials << endl;
     int check_every_n = 1000;
-    double tolerance = 0.1;
-    int n_steps = random_walk_distribution(gc, full_graph_cut, walk_length,n_trials, check_every_n, tolerance);
-    cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / gc.nodes.size() << endl;
-    cout << "if == " << walk_length << ", did not converge in time" << endl;
+    double tolerance = 0.03;
 
 
+
+
+    if (conf.partition_file == "") {
+        cout << "start random walk of length " << walk_length << " with n trials: " << n_trials << endl;
+        int n_steps = random_walk_distribution(gc, full_graph_cut, walk_length,n_trials, check_every_n, tolerance);
+        cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / gc.nodes.size() << endl;
+        cout << "if == " << walk_length << ", did not converge in time" << endl;
+    } else {
+        vector<set<Node>> partition;
+        partition = read_partition_file(conf.partition_file, gc.nodes, partition);
+
+        int assert_count_nodes = 0;
+        for (auto& p : partition) {
+            GraphContext sg; 
+            /*
+            for (auto& n : p) { 
+                cout << gc.g.id(n) << endl;
+            } 
+            cout << p.size() << " p.size()" << endl;
+            */
+            graph_from_cut(gc, sg, p);
+            assert(connected(sg.g));
+            set<Node> dummy_cut;
+            for (auto& n: sg.nodes) {dummy_cut.insert(n);}
+            int n_steps = random_walk_distribution(sg, dummy_cut, walk_length,n_trials, check_every_n, tolerance);
+            cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / p.size() << endl; 
+            assert_count_nodes += p.size();
+
+            cm_result cm_g;
+            double saved_phi = conf.G_phi_target;
+            conf.G_phi_target = PHI_UNREACHABLE;
+            run_cut_matching(sg, conf, cm_g);    
+
+            cout << "sparsest cut found: " << cm_g.best_conductance << endl;
+        }
+        assert (assert_count_nodes == gc.nodes.size());
+    }
     
     return;
 }
@@ -3395,8 +3454,9 @@ main(int argc, char** argv)
     cout << "cluster unbalance" << max_unbalance << endl;
     cout << "output end" << endl;
 
+    string out = config.input.file_name + "cut.txt";
     ofstream file;
-    file.open("cut.txt");
+    file.open(out);
     if (!file) {
         cout << "Cannot open file ";  // << OUTPUT_FILE << endl;
         return 1;
