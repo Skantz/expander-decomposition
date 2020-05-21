@@ -2583,11 +2583,16 @@ decomp(GraphContext& gc, Configuration config,
         balanced = false;
     }
 
-    trace.cut_vol_ratio = !cm_res.reached_H_target? 1.0 * cut_vol / (2. * gc.num_edges) : -1;
+
     cout << "cut vol: " << cut_vol << " gc num edges " << gc.num_edges
          << " balanced?: " << balanced << ": " << endl;
     cout << "h ratio " << config.h_ratio << " "
          << " h: " << h << endl;
+
+    //trace.cut_vol_ratio = !cm_res.reached_H_target? 1.0 * cut_vol / (2. * gc.num_edges) : -1;
+    trace.cut_vol_ratio = 1.0 * cut_vol / (2. * gc.num_edges);
+    trace.cut_vol_ratio = cut_vol >= gc.num_edges? cut_vol : (gc.num_edges - cut_vol) / (2. * gc.num_edges);
+    trace.cut_vol_ratio = cut_is_good || balanced ? trace.cut_vol_ratio : -1;
 
     if (!cut_is_good) {
         cout << "CASE1 NO Goodenough cut (timeout), G certified expander."
@@ -3136,7 +3141,7 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
                     l1_dist += d;
                 }
                 assert(assert_check_max >= uniform_expectation);
-                cout << fixed;
+                //cout << fixed;
                 
                 /*
                 cout << "after j steps, dist is " << l1_dist << endl; //  gc.nodes.size() * 
@@ -3158,7 +3163,7 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
             }
 
             if (l1_dist <= tolerance) {
-                cout << "done" << endl;
+
                 break;
             }
         }
@@ -3167,9 +3172,9 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
     //cout << "sum c: " << sum_c << " gc nodes " << gc.nodes.size() * walk_length * n_trials << endl;
     //assert (sum_c == gc.nodes.size() * walksum c_length * n_trials);
     //assert(l1_dist <= 1);
-    if (l1_dist > tolerance) {
-        cout << "did not converge" << endl;
-    }
+    //if (l1_dist > tolerance) {
+    //    cout << "did not converge" << endl;
+    //}
 
     int n = mixing_rates.size();
     double mixings_sum = 0;
@@ -3223,7 +3228,6 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
         for (auto& p : partition) {
             GraphContext sg; 
 
-            cout << "partition size " << p.size() << endl;
             /*
             for (auto& n : p) { 
                 cout << gc.g.id(n) << endl;
@@ -3234,10 +3238,17 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
             assert(connected(sg.g));
             set<Node> dummy_cut;
             for (auto& n: sg.nodes) {dummy_cut.insert(n);}
-            int n_steps = random_walk_distribution(sg, dummy_cut, walk_length,n_trials, check_every_n, tolerance);
-            cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / p.size() << endl; 
+            int TRIALS = 10;
+            int sum_res = 0;
+            for (int i = 0; i < TRIALS; i++) {
+                int n_steps = random_walk_distribution(sg, dummy_cut, walk_length,n_trials, check_every_n, tolerance);
+                sum_res += n_steps;
+            }
+            int mean_res = (1. * sum_res)/TRIALS;
+            cout << "steps to stationary convergence;" << mean_res << ";steps per node;" << mean_res / p.size() << ";partition size;" << p.size() << endl; 
             assert_count_nodes += p.size();
 
+            /*
             if (p.size() > 1) {
                 cm_result cm_g;
                 double saved_phi = conf.G_phi_target;
@@ -3245,6 +3256,7 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
                 run_cut_matching(sg, conf, cm_g);    
                 cout << "sparsest cut found: " << cm_g.best_conductance << endl;
             }
+            */
         }
         assert (assert_count_nodes == gc.nodes.size());
     }
