@@ -2559,10 +2559,15 @@ decomp(GraphContext& gc, Configuration config,
 
     if (cm_res.best_relatively_balanced) {
         balanced = true;
+    } else {
+        balanced = false;
     }
     if (cm_res.best_conductance < config.G_phi_target) {
         cut_is_good = true;
+    } else {
+        cut_is_good = false;
     }
+
 
     // Q: should be an improvement. But this will affect balance. re-calculate?
     cut = connected_component_from_cut(gc, cut);
@@ -2590,13 +2595,16 @@ decomp(GraphContext& gc, Configuration config,
          << " h: " << h << endl;
 
     //trace.cut_vol_ratio = !cm_res.reached_H_target? 1.0 * cut_vol / (2. * gc.num_edges) : -1;
-    trace.cut_vol_ratio = 1.0 * cut_vol / (2. * gc.num_edges);
-    trace.cut_vol_ratio = cut_vol >= gc.num_edges? cut_vol : (gc.num_edges - cut_vol) / (2. * gc.num_edges);
-    trace.cut_vol_ratio = cut_is_good || balanced ? trace.cut_vol_ratio : -1;
+    trace.cut_vol_ratio = 1.0 * cut_vol / (2. * gc.num_edges); 
+    trace.cut_vol_ratio = trace.cut_vol_ratio < 0.5? 1 - trace.cut_vol_ratio: trace.cut_vol_ratio;
+    //trace.cut_vol_ratio = cut_vol >= gc.num_edges? trace.cut_vol_ratio : (gc.num_edges - cut_vol) / (2. * gc.num_edges);
+    trace.cut_vol_ratio = cut_is_good ? trace.cut_vol_ratio : -1;
+    assert(trace.cut_vol_ratio <= 1.0);
 
     if (!cut_is_good) {
         cout << "CASE1 NO Goodenough cut (timeout), G certified expander."
              << endl;
+        assert(trace.cut_vol_ratio == -1) ;
         node_maps_to_original_graph.push_back(map_to_original_graph);
     }
 
