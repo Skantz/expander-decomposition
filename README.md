@@ -1,6 +1,6 @@
 # expander-decomposition
 
-Graph partitioning software based on https://arxiv.org/abs/1812.08958
+Implementing the graph partitioning of https://arxiv.org/abs/1812.08958
 
 Decomposes graphs with cluster expansion guarantees.
 
