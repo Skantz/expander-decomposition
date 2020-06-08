@@ -28,6 +28,7 @@
 
 #include <omp.h>
 #include <sched.h>
+#include <limits.h>
 
 using namespace lemon;
 using namespace std;
@@ -977,7 +978,7 @@ struct CutMatching {
         else
             return (double(sgc.origContext.num_edges) /
                     (10. * config.volume_treshold_factor *
-                     pow(log2(sgc.origContext.num_edges), 2)));
+                     pow(log(sgc.origContext.num_edges), 2)));
     }
 
     /*
@@ -1461,15 +1462,15 @@ level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue)
                 }
             }
         }
-        if (z_i <= 5. * s_vol * log2(e) /
+        if (z_i <= 5. * s_vol * log(e) /
                        level_queue.size()) {  // Q: fp.h in denominator?
             cut_index = i;
             break;
         }
     }
-    cout << "local flow: s_vol: " << s_vol << "log2(e)" << log2(e) << "e: " << e
+    cout << "local flow: s_vol: " << s_vol << "log(e)" << log(e) << "e: " << e
          << "fp.h:  " << fp.h << endl;
-    cout << "local flow: cut thresh is: " << 5.0 * s_vol * log2(e) / fp.h
+    cout << "local flow: cut thresh is: " << 5.0 * s_vol * log(e) / fp.h
          << endl;
     cout << "local flow: cut index is: " << cut_index
          << " A size: " << fp.A.size() << endl;
@@ -1897,7 +1898,7 @@ trimming(GraphContext& gc, Configuration conf, set<Node> cut, double phi)
 
     fp.A = A;
     fp.R = R;
-    fp.h = 40 * log2(2 * gc.num_edges) / phi;
+    fp.h = 40 * log(2 * gc.num_edges) / phi;
     fp.h = A.size();
     fp.phi = phi;
     // Wasteful but still mlogm
@@ -2120,18 +2121,6 @@ find_connected_components(GraphContext& g)
         // bfs.run();
         assert(y != INVALID);
         assert(visited_nodes[y] == false);
-        // visited_nodes[y] = true;
-        /*
-        if (bfs.emptyQueue()) {
-            //cout << "Unreachable ?" << endl;
-            labels[cc].insert(y);
-            visited_nodes[y] = true;
-            n_visited++;
-            cc++;
-            continue;
-        }
-        */
-        assert(y != INVALID);
 
         // starting node y too
         n_visited++;
@@ -2422,19 +2411,6 @@ test_subgraph_expansion(GraphContext& gc, Configuration config, set<Node> cut,
     return cm_sg.best_conductance >= cm_g.best_conductance * acceptance_ratio;
 }
 
-/*
-  static bool is_crossing(const G &g, const Bisection &c, const Edge &e) {
-    bool u_in = c.count(g.u(e));
-    bool v_in = c.count(g.v(e));
-    return u_in != v_in;
-  }
-
-  static bool any_in_cut(const G &g, const Bisection &c, const Edge &e) {
-    bool u_in = c.count(g.u(e));
-    bool v_in = c.count(g.v(e));
-    return u_in || v_in;
-  }*/
-
 int
 cut_volume(GraphContext& gc, set<Node> cut)
 {
@@ -2574,14 +2550,17 @@ decomp(GraphContext& gc, Configuration config,
     int cut_vol = cut_volume(gc, cut);
 
     double h = double(gc.num_edges) / (10. *
-                                       pow(log2(gc.num_edges), 2));
+                                       pow(log(gc.num_edges), 2));
 
-    if ((1. - config.h_ratio) * gc.num_edges >= cut_vol / 2. &&
-        cut_vol / 2. >= config.h_ratio * gc.num_edges) {
+    double upper = (1. * gc.num_edges - h) / (1. * gc.num_edges);
+    double lower = 1. - upper;
+
+    if ((((1. - config.h_ratio) * gc.num_edges) >= (cut_vol / 2.)) &&
+        ((cut_vol / 2.) >= (config.h_ratio * gc.num_edges))) {
         balanced = true;
     }
-    else if (config.h_ratio == 0 && gc.num_edges - h >= cut_vol / 2. &&
-             cut_vol / 2. >= h) {
+    else if ((config.h_ratio == 0.) && ((gc.num_edges - h) >= (cut_vol / 2.)) &&
+             ((cut_vol / 2.) >= h)) {
         balanced = true;
     }
     else {
@@ -2590,9 +2569,10 @@ decomp(GraphContext& gc, Configuration config,
 
 
     cout << "cut vol: " << cut_vol << " gc num edges " << gc.num_edges
-         << " balanced?: " << balanced << ": " << endl;
+         << " balanced?: " << balanced << endl;
     cout << "h ratio " << config.h_ratio << " "
-         << " h: " << h << endl;
+         << " h: " << h << " |E| " << gc.num_edges << endl;
+    cout << "upper/lower balance threshold" <<  upper << " / " << lower << endl;
 
     //trace.cut_vol_ratio = !cm_res.reached_H_target? 1.0 * cut_vol / (2. * gc.num_edges) : -1;
     trace.cut_vol_ratio = 1.0 * cut_vol / (2. * gc.num_edges); 
@@ -2847,7 +2827,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     if (h_ratio <= 0.) {
         h_ratio = (double(gc.num_edges) /
                     (10. * conf.volume_treshold_factor *
-                     pow(log2(gc.num_edges), 2))) / gc.nodes.size();
+                     pow(log(gc.num_edges), 2))) / gc.nodes.size();
     cout << "local flow:, set h_ratio to " << h_ratio << endl;
     }
 
@@ -2922,7 +2902,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     
     double h = double(gc.num_edges) /
                     (10. * 1. *
-                     pow(log2(1. * gc.num_edges), 2));
+                     pow(log(1. * gc.num_edges), 2));
 
     cout << "===" << endl;
     if (connected(sg.g)) {
@@ -3045,7 +3025,7 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
 
 
 
-double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_length, int n_trials, int check_convergence_every_n, double tolerance) {
+long random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_length, int n_trials, int check_convergence_every_n, double tolerance) {
     
     //Q: fix this
     assert(cut.size() == gc.nodes.size());
@@ -3087,7 +3067,7 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
     int sum_c = 0;
     double old_l1_dist = 1;
     double l1_dist = 1;
-    int n_steps = 0;
+    long n_steps = 0;
     for (int i = 0; i < n_trials; i++) {
         n_steps = 0;
         int start_node_index = random_int(r_engine);
@@ -3102,18 +3082,16 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
             random_device rd_;
             default_random_engine r_engine_(rd_());
             int next_index = random_nbor_index(r_engine_);
-            //cout << "nbors[curr_node] - 1: " << nbors[curr_node] - 1 << endl;
-            //cout <<  gc.g.id(curr_node) << " "  << gc.nodes.size()  <<  "..." << next_index <<  " / " << nbors_lst[curr_node].size() - 1 <<  endl;
+
             assert (next_index < nbors_lst[curr_node].size());
-            //Q: is this right
-            //if  (!( gc.g.id(curr_node) < gc.nodes.size() && gc.g.id(curr_node) < nbors_lst.size() && next_index < gc.nodes.size())) {
-            //    cout << "curr node " << gc.g.id(curr_node) << " node size " << gc.nodes.size() << " nbors list size " << nbors_lst.size() << " next index " << next_index << endl;
-            //    assert(false && "random walk indexing failed");
-            //}
+
             counts[curr_node]++;
             assert (0 <= next_index <= nbors_lst[curr_node].size());
             curr_node = nbors_lst[curr_node][next_index];
+            long saved_steps = n_steps;
             n_steps++;
+            //overflows
+            assert(n_steps - 1 == saved_steps);
             sum_c++;
  
             double assert_check_max = 0.;
@@ -3134,38 +3112,14 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
                     double d_s = uniform_expectation - ((ratio_visited_this_node * vertex_norm)); //  / norm_term);
                     assert_check_max = max(ratio_visited_this_node * vertex_norm, assert_check_max);
                     double d = abs(d_s);
-                    //cout << uniform_expectation << " - " << (ratio_visited_this_node * vertex_norm) << endl;
-                    /*
-                    cout << "ratio visited this node: " << ratio_visited_this_node << " norm term " << norm_term << " " << vertex_norm << endl;
-                    cout << d << endl;
-                    cout << uniform_expectation << " - " << (ratio_visited_this_node * vertex_norm / norm_term  ) << " = " << d_s  << endl;
-                    cout << "count/expected: " << counts[n] << " " << uniform_expectation * total_visited_nodes / vertex_norm << endl;
-                    */
+
                     assert ((1.*counts[n])/(1.*n_trials)/(1.*walk_length) <= 1);
-                    //cout << d << endl;
-                    //Q: not necessarily true? because of normalization  
-                    //assert (0. <= d && d <= 1.);
-                    //cout << d << endl;
+
                     l1_dist += d;
                 }
                 assert(assert_check_max >= uniform_expectation);
-                //cout << fixed;
-                
-                /*
-                cout << "after j steps, dist is " << l1_dist << endl; //  gc.nodes.size() * 
-                cout << "rate of convergence /nodes /steps:" <<  gc.nodes.size() * (old_l1_dist - l1_dist) /check_convergence_every_n << endl;
-                */
-                /*
-                cout << "nodes size" << gc.nodes.size() << endl;
-                cout << "old." << old_l1_dist << endl;
-                cout << "new" << l1_dist << endl;
-                cout << "every n" << check_convergence_every_n << endl;
-                cout << "change " <<  setprecision(10) << old_l1_dist - l1_dist << endl;
-                */
-               
+
                 double delta = gc.nodes.size() * (old_l1_dist - l1_dist) / double(check_convergence_every_n);
-                //cout << "delta " << delta << endl;
-                //Delta is growing smaller 
                 mixing_rates.push_back(delta);
                 old_l1_dist = l1_dist;
             }
@@ -3177,20 +3131,11 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
         }
     }
 
-    //cout << "sum c: " << sum_c << " gc nodes " << gc.nodes.size() * walk_length * n_trials << endl;
-    //assert (sum_c == gc.nodes.size() * walksum c_length * n_trials);
-    //assert(l1_dist <= 1);
-    //if (l1_dist > tolerance) {
-    //    cout << "did not converge" << endl;
-    //}
-
     int n = mixing_rates.size();
     double mixings_sum = 0;
     for (auto& m: mixing_rates) {
         mixings_sum += m;
     }
-
-    //cout <<  setprecision(10) << "mean mix rate " << mixings_sum/double(n) << " - " << mixings_sum << "/" << double(n) << endl;
 
     return n_steps;
 }
@@ -3200,28 +3145,21 @@ double random_walk_distribution(GraphContext& gc, set<Node> cut, long walk_lengt
 void
 test_expander(GraphContext& gc, Configuration conf, double phi)
 {
-    // butterfly_test(conf, 10, 10, 2, 2);
-    // butterfly_test(conf, 3, 3, 1, 1);
-    // butterfly_test(conf, 1, 500, 1, 1);
-    // butterfly_test(conf, 20, 500, 2, 1);
-    // butterfly_test(conf, 100, 100, 1, 1);
-    // butterfly_test(conf, 200, 200, 2, 2);
+
+
 
     set<Node> full_graph_cut;
     for (NodeIt n(gc.g); n!= INVALID; ++n) {
         full_graph_cut.insert(n);
     }
 
-    //int walk_length = log2(gc.nodes.size());
+    //int walk_length = log(gc.nodes.size());
     //int n_trials = 100 * gc.nodes.size() / walk_length;
     int n_trials = 1;
-    long walk_length = 100000 * gc.nodes.size();
+    long walk_length = LONG_MAX;
     //walk_length * n_trials = 100 * gc nodes.size;
     int check_every_n = 1000;
     double tolerance = 0.1;
-
-
-
 
     if (conf.partition_file == "") {
         cout << "start random walk of length " << walk_length << " with n trials: " << n_trials << endl;
@@ -3236,12 +3174,6 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
         for (auto& p : partition) {
             GraphContext sg; 
 
-            /*
-            for (auto& n : p) { 
-                cout << gc.g.id(n) << endl;
-            } 
-            cout << p.size() << " p.size()" << endl;
-            */
             graph_from_cut(gc, sg, p);
             assert(connected(sg.g));
             set<Node> dummy_cut;
@@ -3249,22 +3181,13 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
             int TRIALS = 10;
             int sum_res = 0;
             for (int i = 0; i < TRIALS; i++) {
-                int n_steps = random_walk_distribution(sg, dummy_cut, walk_length,n_trials, check_every_n, tolerance);
+                long n_steps = random_walk_distribution(sg, dummy_cut, walk_length,n_trials, check_every_n, tolerance);
                 sum_res += n_steps;
             }
             int mean_res = (1. * sum_res)/TRIALS;
             cout << "steps to stationary convergence;" << mean_res << ";steps per node;" << mean_res / p.size() << ";partition size;" << p.size() << endl; 
             assert_count_nodes += p.size();
 
-            /*
-            if (p.size() > 1) {
-                cm_result cm_g;
-                double saved_phi = conf.G_phi_target;
-                conf.G_phi_target = PHI_UNREACHABLE;
-                run_cut_matching(sg, conf, cm_g);    
-                cout << "sparsest cut found: " << cm_g.best_conductance << endl;
-            }
-            */
         }
         assert (assert_count_nodes == gc.nodes.size());
     }
@@ -3272,43 +3195,7 @@ test_expander(GraphContext& gc, Configuration conf, double phi)
     return;
 }
 
-/*
-void find_non_expander_subgraph(GraphContext& g, Configuration config, double
-nodes_to_remove) {
 
-    GraphContext sg;
-    set<Node> cut;
-    vector<int> indices;
-    for (int i = 0; i < g.nodes.size(); i++) {
-      indices.push_back(i);
-    }
-
-    int n = g.nodes.size();
-
-
-    bool found_non_expander = false;
-
-    while (!found_non_expander) {
-      shuffle(indices.begin(), indices.end(),
-              default_random_engine(random_device()()));
-      indices.erase(indices.begin(),
-                    indices.begin() + conf.h_ratio * indices.size());
-      for (auto &i : indices) {
-        cut.insert(gc.g.nodeFromId(i));
-
-
-      indices.clear();
-  }
-
-  GraphContext gc_nodes_removed;
-  graph_from_cut(gc, gc_nodes_removed, cut);
-  vector<set<Node>> cc_ = find_connected_components(gc_nodes_removed);
-
-
-    }
-
-}
-*/
 
 
 int
@@ -3471,11 +3358,11 @@ main(int argc, char** argv)
     cout << "n cut matches;" << stats.n_cm << endl;
     cout << "n decomps;" << stats.n_decomps << endl;
     cout << "n singletons;" << n_singletons << endl;
-    cout << "coms volume"   << coms_volume << endl;
-    cout << "n clusters" << n_clusters << endl;
-    cout << "total time" << duration_sec(start, stop) << endl;
-    cout << "cluster unbalance" << max_unbalance << endl;
-    cout << "output end" << endl;
+    cout << "coms volume;"   << coms_volume << endl;
+    cout << "n clusters;" << n_clusters << endl;
+    cout << "total time;" << duration_sec(start, stop) << endl;
+    cout << "cluster unbalance;" << max_unbalance << endl;
+    cout << "output end;" << endl;
 
     string out = config.input.file_name + "cut.txt";
     ofstream file;
