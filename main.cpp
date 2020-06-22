@@ -66,6 +66,7 @@ using Cutp = unique_ptr<Cut>;
 using CutMap = NodeMap<bool>;
 
 #define MAX_PARALLEL_RECURSIVE_LEVEL 10
+#define DEBUG 1
 
 const int NUM_THREADS = 4;
 const double MICROSECS = 1000000.0;
@@ -1309,14 +1310,7 @@ template <class T>
 using ArcMap = typename DG::template ArcMap<T>;
 using DGOutArcIt = typename DG::OutArcIt;
 
-/*
-    for (auto& n: cut)
-        A.insert(dg.nodeFromId(gc.g.id(n)));
 
-    std::set_difference(gc.nodes.begin(), gc.nodes.end(), cut.begin(),
-   cut.end(), std::inserter(R_ug, R_ug.end()));
-    //cut.swap(R_ug);
-*/
 
 set<Node>
 cut_complement(vector<Node> nodes, set<Node> cut)
@@ -1986,16 +1980,18 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut)
         reverse_map[n] = x;
         sg.orig_degree[x] = g.orig_degree[n];
     }
-
+    map<Node, int> self_loops_added_to_node;
+    for (NodeIt n(sg.g); n != INVALID; ++n) {
+        self_loops_added_to_node[n] = 0;
+    }
+    //map<Node, bool> added;
     int sum_all_edges = 0;
     int self_loops = 0;
     for (const auto& n : cut) {
         for (IncEdgeIt a(g.g, n); a != INVALID; ++a) {
-            if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0) 
-                sum_all_edges++;
-                if (g.g.id(g.g.target(a)) == g.g.id(g.g.source(a)))  {self_loops++;}
+
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
-                g.g.id(g.g.source(a)) < g.g.id(g.g.target( a))) { 
+                g.g.id(g.g.source(a)) < g.g.id(g.g.target(a))) {
                 //assert(reverse_map[n] !=
                 //       reverse_map[g.g.target(a)]);  // no self -loop
                 assert(sg.g.id(reverse_map[g.g.source(a)]) < sg.nodes.size() &&
@@ -2004,18 +2000,41 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut)
                              reverse_map[g.g.target(a)]);
                 sg.num_edges++;
             }
-            // Self-loops added here
-            else if (cut.count(g.g.target(a)) == 0 &&
-                cut.count(g.g.source(a)) > 0 &&
-                g.g.id(g.g.source(a)) <=
-                g.g.id(g.g.target(a))) {
-                sg.g.addEdge(reverse_map[g.g.source(a)],
-                             reverse_map[g.g.source(a)]);
-                sg.num_edges++;
-            }
+        }
+    }
+    for (const auto& n : cut) {
+        Node nn = reverse_map[n];
+        int c = 0;
+        for (IncEdgeIt a(sg.g, nn); a != INVALID; ++a) {
+            c += 1;
+        }
+        assert(c <= sg.orig_degree[nn]);
+        for (int i = 0; i < sg.orig_degree[nn] - c; i++) {
+            sg.g.addEdge(nn, nn);
         }
     }
     sg.num_edges = countEdges(sg.g);
+
+    #if DEBUG == 1
+    for (NodeIt n(sg.g); n != INVALID; ++n) {
+        int c = 0;
+        int self_loops = 0;
+        for (IncEdgeIt e(sg.g, n); e != INVALID; ++e) {
+            c += 1;
+            if (sg.g.id(sg.g.source(e)) == sg.g.id(sg.g.target(e))) {
+                self_loops += 1;
+            }
+        }
+        if (sg.orig_degree[n] != c - self_loops/2) {
+            cout << "orig degree: " << sg.orig_degree[n] << " " << "new degree: " << c << endl;
+            cout << "self loops: " << self_loops << endl;
+            cout << "adjusted: " << sg.orig_degree[n] << " == " << c - self_loops/2 << endl;
+            assert(false && "subgraph degrees not equal to original degree");
+        }
+        assert(sg.orig_degree[n] == (c - self_loops/2));
+    }
+    #endif
+
     return;
 }
 
@@ -2051,11 +2070,15 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut,
     }
     // sort(sg.nodes.begin(), sg.nodes.end());
 
+    map<Node, int> self_loops_added_to_node;
+    for (NodeIt n(sg.g); n != INVALID; ++n) {
+        self_loops_added_to_node[n] = 0;
+    }
     int sum_all_edges = 0;
+    int new_self_loops = 0;
     for (const auto& n : cut) {
         for (IncEdgeIt a(g.g, n); a != INVALID; ++a) {
-            if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0)
-                sum_all_edges++;
+
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
                 g.g.id(g.g.source(a)) < g.g.id(g.g.target(a))) {
                 //assert(reverse_map[n] !=
@@ -2066,17 +2089,40 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut,
                              reverse_map[g.g.target(a)]);
                 sg.num_edges++;
             }
-            // Add self-oops ?
-            else if (cut.count(g.g.target(a)) == 0 &&
-                     cut.count(g.g.source(a)) > 0 &&
-                     g.g.id(g.g.source(a)) < g.g.id(g.g.target(a))) {
-                sg.g.addEdge(reverse_map[g.g.source(a)],
-                             reverse_map[g.g.source(a)]);
-                sg.num_edges++;
-            }
         }
     }
-    //sg.num_edges = countEdges(sg.g);
+    for (const auto& n : cut) {
+        Node nn = reverse_map[n];
+        int c = 0;
+        for (IncEdgeIt a(sg.g, nn); a != INVALID; ++a) {
+            c += 1;
+        }
+        assert(c <= sg.orig_degree[nn]);
+        for (int i = 0; i < sg.orig_degree[nn] - c; i++) {
+            sg.g.addEdge(nn, nn);
+        }
+    }
+    sg.num_edges = countEdges(sg.g);
+    int self_loops = 0;
+    #if DEBUG == 1
+    for (NodeIt n(sg.g); n != INVALID; ++n) {
+        int c = 0;
+        int self_loops = 0;
+        for (IncEdgeIt e(sg.g, n); e != INVALID; ++e) {
+            c += 1;
+            if (sg.g.id(sg.g.source(e)) == sg.g.id(sg.g.target(e))) {
+                self_loops += 1;
+            }
+        }
+        if (sg.orig_degree[n] != c - self_loops/2) {
+            cout << "orig degree: " << sg.orig_degree[n] << " " << "new degree: " << c << endl;
+            cout << "self loops: " << self_loops << endl;
+            cout << "adjusted: " << sg.orig_degree[n] << " == " << c - self_loops/2 << endl;
+            assert(false && "subgraph degrees not equal to original degree");
+        }
+        //assert(sg.orig_degree[n] == c - self_loops/2);
+    }
+    #endif
     return new_map;
 }
 
@@ -2165,10 +2211,11 @@ connected_component_from_cut(GraphContext& gc_orig, set<Node> A)
 
     std::set_difference(gc_orig.nodes.begin(), gc_orig.nodes.end(), A.begin(),
                         A.end(), std::inserter(R, R.end()));
+    #if DEBUG == 1
     assert(connected(gc_orig.g));
-    // Q: remove
     vector<set<Node>> test_cc = find_connected_components(gc_orig);
     assert(test_cc.size() == 1);
+    #endif
     // Q: just for now?
     // assert(A.size() >= R.size());
     GraphContext A_sg;
@@ -2176,7 +2223,8 @@ connected_component_from_cut(GraphContext& gc_orig, set<Node> A)
 
     map<Node, Node> gc_to_gc;
     for (auto& n : gc_orig.nodes)
-        gc_to_gc[n] = n;
+        {gc_to_gc[n] = n;}
+
     map<Node, Node> A_to_orig = graph_from_cut(gc_orig, A_sg, A, gc_to_gc);
     map<Node, Node> R_to_orig = graph_from_cut(gc_orig, R_sg, R, gc_to_gc);
 
@@ -2236,13 +2284,13 @@ connected_component_from_cut(GraphContext& gc_orig, set<Node> A)
         A_to_orig = graph_from_cut(gc_orig, A_sg_, A, gc_to_gc);
         R_to_orig = graph_from_cut(gc_orig, R_sg_, R, gc_to_gc);
         assert(A_sg_.nodes.size() + R_sg_.nodes.size() == gc_orig.nodes.size());
-        // Q: does not work because indices are messed up when creating subgraph
+
         components_A = find_connected_components(A_sg_);
         components_R = find_connected_components(R_sg_);
         assert(components_A.size() == 1 || components_R.size() == 1);
     }
     assert(A.size() + R.size() == gc_orig.nodes.size());
-    // graph_from_cut(GraphContext &g, GraphContext &sg, set<Node> cut)
+
     if (A.size() >= R.size())
         return A;
     return R;
@@ -2501,9 +2549,11 @@ decomp(GraphContext& gc, Configuration config,
         return node_maps_to_original_graph;
     }
 
+    #if DEBUG == 1
     assert(connected(gc.g));
+    #endif
 
-    // Q: check expansion
+    // TOFIX check expansion
     if (gc.nodes.size() == 2) {
         map<Node, Node> map_1 = {
             {gc.g.nodeFromId(0), map_to_original_graph[gc.g.nodeFromId(0)]}};
@@ -2527,11 +2577,6 @@ decomp(GraphContext& gc, Configuration config,
 
 
     cut = cm_res.best_cut;
-    /*
-    !(cm_res.reached_H_target) && cm_res.best_relatively_balanced
-        ? cut = cm_res.last_cut
-        : cut = cm_res.best_cut;
-    */
 
     if (cm_res.best_relatively_balanced) {
         balanced = true;
@@ -2567,35 +2612,35 @@ decomp(GraphContext& gc, Configuration config,
         balanced = false;
     }
 
-
     cout << "cut vol: " << cut_vol << " gc num edges " << gc.num_edges
          << " balanced?: " << balanced << endl;
     cout << "h ratio " << config.h_ratio << " "
          << " h: " << h << " |E| " << gc.num_edges << endl;
     cout << "upper/lower balance threshold" <<  upper << " / " << lower << endl;
 
-    //trace.cut_vol_ratio = !cm_res.reached_H_target? 1.0 * cut_vol / (2. * gc.num_edges) : -1;
+
     trace.cut_vol_ratio = 1.0 * cut_vol / (2. * gc.num_edges); 
     trace.cut_vol_ratio = trace.cut_vol_ratio < 0.5? 1 - trace.cut_vol_ratio: trace.cut_vol_ratio;
-    //trace.cut_vol_ratio = cut_vol >= gc.num_edges? trace.cut_vol_ratio : (gc.num_edges - cut_vol) / (2. * gc.num_edges);
     trace.cut_vol_ratio = cut_is_good ? trace.cut_vol_ratio : -1;
+
     assert(trace.cut_vol_ratio <= 1.0);
 
     if (!cut_is_good) {
         cout << "CASE1 NO Goodenough cut (timeout), G certified expander."
              << endl;
-        assert(trace.cut_vol_ratio == -1) ;
+        assert(trace.cut_vol_ratio == -1);
         node_maps_to_original_graph.push_back(map_to_original_graph);
+
+        #if DEBUG == 1
+        GraphContext debug_sg_1;
+        graph_from_cut(gc, debug_sg_1, cut);
+        assert(connected(debug_sg_1.g));
+        #endif
     }
 
     // break early due to balanced and good cut
     else if (cut_is_good && balanced) {
         assert(cut.size() > 0 != gc.nodes.size());
-        //        //private(A, new_map, empty_map, decomp_map)
-        // int t = omp_get_max_threads();vol_ratio
-
-// omp_set_max_active_levels
-
         int t = NUM_THREADS;
         int edge_count = 0;
         bool done_recurse;
@@ -2611,7 +2656,7 @@ decomp(GraphContext& gc, Configuration config,
             bool swtch = i == 1;
             map<Node, Node> new_map = graph_from_cut(
                 gc, A, cut, map_to_original_graph, swtch);
-            //Q: do this but adjust for self-loops.
+            //TODO do this but adjust for self-loops.
             /*
             if (i == 0) {
                 cout << "A.num edges" << A.num_edges << endl;
@@ -2627,22 +2672,18 @@ decomp(GraphContext& gc, Configuration config,
             vector<map<Node, Node>> empty_map;
             vector<map<Node, Node>> decomp_map = decomp(
                 A, config, new_map, empty_map, stats, trace);
+
 #pragma omp critical
             node_maps_to_original_graph.insert(
                 node_maps_to_original_graph.end(), decomp_map.begin(),
                 decomp_map.end());
             if (i == 1)
                 done_recurse = true;
+            #if DEBUG == 1
+            assert(connected(A.g));
+            #endif
         }
-        /*
-        cout << "ec" << cut_volume << endl;
-        cout << "ec" << edge_count + cm_res.best_cut_crossing_edges/2 << endl;
-        cout << "ec" << gc.num_edges << endl;
-        
-        //Q: do this but adjust for self loops
-        if (done_recurse)
-            assert(edge_count + cm_res.best_cut_crossing_edges/2 == gc.num_edges);
-        */
+
     }
 
     // check best cut found so far
@@ -2702,14 +2743,14 @@ decomp(GraphContext& gc, Configuration config,
         warn(V_over_A.nodes.size() > 0, "non trimmed side is 0!", __LINE__);
         warn(cut.size() == 0, "trimmed component has size 0", __LINE__);
 
-
-
-
         node_maps_to_original_graph.push_back(A_map);
         vector<map<Node, Node>> empty_map;
         vector<map<Node, Node>> cuts_empty_map;
         vector<map<Node, Node>> decomp_map = decomp(
             V_over_A, config, R_map, cuts_empty_map, stats, trace);
+        #if DEBUG == 1
+        assert(connected(A.g));
+        #endif
         node_maps_to_original_graph.insert(node_maps_to_original_graph.end(),
                                            decomp_map.begin(),
                                            decomp_map.end());
@@ -3213,6 +3254,7 @@ main(int argc, char** argv)
 
     GraphContext gc;
     initGraph(gc, config.input);
+    //assert(connected(gc.g));
     config.n_nodes_orig = gc.nodes.size();
     config.e_edges_orig = gc.num_edges;
 
@@ -3249,6 +3291,19 @@ main(int argc, char** argv)
                                               node_maps_to_original_graph,
                                               stats, trace);
     auto stop = now();
+
+    #if DEBUG == 1
+    for (auto& cut: cut_maps) {
+        set<Node> cut_;
+        for (auto& m: cut) {
+            cut_.insert(m.second);
+        }
+        GraphContext sg;
+        graph_from_cut(gc, sg, cut_);
+        assert(connected(sg.g));
+    }
+    cout << "all subgraphs verified as connected" << endl;
+    #endif
 
     cout << "Done decomp" << endl;
     cout << "output:" << endl;
