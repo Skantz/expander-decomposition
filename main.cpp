@@ -1989,7 +1989,6 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut)
     int self_loops = 0;
     for (const auto& n : cut) {
         for (IncEdgeIt a(g.g, n); a != INVALID; ++a) {
-
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
                 g.g.id(g.g.source(a)) < g.g.id(g.g.target(a))) {
                 //assert(reverse_map[n] !=
@@ -2591,7 +2590,10 @@ decomp(GraphContext& gc, Configuration config,
 
 
     // Q: should be an improvement. But this will affect balance. re-calculate?
+    //TOOD: use this heuristic
+    /*
     cut = connected_component_from_cut(gc, cut);
+    */
     int cut_vol = cut_volume(gc, cut);
 
     double h = double(gc.num_edges) / (10. *
@@ -2632,9 +2634,9 @@ decomp(GraphContext& gc, Configuration config,
         node_maps_to_original_graph.push_back(map_to_original_graph);
 
         #if DEBUG == 1
-        GraphContext debug_sg_1;
-        graph_from_cut(gc, debug_sg_1, cut);
-        assert(connected(debug_sg_1.g));
+        //GraphContext debug_sg_1;
+        //graph_from_cut(gc, debug_sg_1, cut);
+        assert(connected(gc.g));
         #endif
     }
 
@@ -2680,7 +2682,8 @@ decomp(GraphContext& gc, Configuration config,
             if (i == 1)
                 done_recurse = true;
             #if DEBUG == 1
-            assert(connected(A.g));
+            //Doesn't have to be true
+            ; //assert(connected(A.g));
             #endif
         }
 
@@ -2723,7 +2726,8 @@ decomp(GraphContext& gc, Configuration config,
                                                map_to_original_graph, true);
         map<Node, Node> A_map = graph_from_cut(gc, A, real_trim_cut,
                                                map_to_original_graph, false);
-
+ 
+        #if DEBUG == 1
         if (real_trim_cut.size() < cut.size() && config.decompose_with_tests) { 
             auto start3 = now();
             bool sg_is_expander = test_subgraph_expansion(gc, config, real_trim_cut,
@@ -2735,6 +2739,7 @@ decomp(GraphContext& gc, Configuration config,
             auto stop3 = now();
             stats.time_in_fl_tests += duration_sec(start3, stop3);
         }
+        #endif
 
 
         cut = real_trim_cut;
