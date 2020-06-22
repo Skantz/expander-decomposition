@@ -13,6 +13,4 @@ INSTALL
 
 USE
 
-./a.out  --G_phi=0.01 --H_phi=0.4 --vol=1 --h_ratio=0.01 -f random_3_regular_5000.graph
-
-G_phi is our target conductance, H_phi a convergence threshold for cut-matching.
+There are use examples in the provided notebook.
