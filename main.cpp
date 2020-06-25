@@ -374,9 +374,9 @@ parse_chaco_format(const string& filename, ListGraph& g, vector<Node>& nodes)
             // cout << "edge to: " << v_name << "..." ;
             assert(v_name != 0);
             Node v = nodes[v_name - 1];
-            //Q: is this right?
+            //TODO: is this right?
             //Ignore multi-edges unless self-loop
-            //If self loop add twice to correctly initialize degree
+            //If self loop add multiple times
             if  (findEdge(g, u, v) == INVALID || u == v) {
                 g.addEdge(u, v);
             }
