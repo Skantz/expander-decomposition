@@ -93,9 +93,14 @@ def random_d_regular(d, n):
 
 def write_graph(G, f):
     G = nx.convert_node_labels_to_integers(G, first_label=1)
-    f.write(str(len(G.nodes())) +" "+ str(len(G.edges()))+"\n")
-    for line in nx.generate_adjlist(G):
-        f.write(line.partition(' ')[2])
+    f.write(str(len(G.nodes())) +" "+ str(len(G.edges()) + 0*(len(G.edges()) % 2)) +"\n")
+    for n in G.nodes():
+        lst = G[n]
+        f.write(" ".join([str(e) for e in lst]))
+        #'1 2', '3', '2 3 4'
+        #line = " ".join([e for e in line.strip("\n").split() if int(e) >= i])
+        #line = "".join([e for e in line.strip().split() if int(e) < i])
+        #f.write(line.partition(' ')[2])
         f.write("\n")
 
 f = open("random_3_regular_5000.graph", "w+")
