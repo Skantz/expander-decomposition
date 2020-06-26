@@ -3323,16 +3323,20 @@ main(int argc, char** argv)
     for (const auto& m : cut_maps) {
         if (m.size() == 1) {
             for (const auto& c : m) {
+                //We never saw it before
                 assert(count(all_nodes.begin(), all_nodes.end(),
                              gc.g.id(c.second)) == 0);
-                all_nodes.push_back(gc.g.id(c.second));
+                //all_nodes.push_back(gc.g.id(c.second));
             }
-            all_nodes_count++;
+            //all_nodes_count++;
             n_singletons++;
-            continue;
+            //continue;
         }
+        //Comment out above to count singletons correctly below and also output explicit singletones
         cuts_node_vector.push_back(vector<Node>());
         for (const auto& c : m) {
+            assert(count(all_nodes.begin(), all_nodes.end(),
+                gc.g.id(c.second)) == 0);
             all_nodes_count++;
             // cout << gc.g.id(c.second) << " ";
             all_nodes.push_back(gc.g.id(c.second));
@@ -3347,23 +3351,36 @@ main(int argc, char** argv)
     // 0));
     vector<double> node_ratio_edges_inside;
 
-    int coms_volume = 0;
+    double coms_volume = 0;
+    double internal_volume = 0;
     double max_unbalance = 0.;
     int max_size_cluster = 1;
     int min_size_cluster = 1;
     for (int i = 0; i < cuts_node_vector.size(); ++i) {
         // for (const auto &m : cuts_node_vector) {
+        double edges_outside_cluster = 0.0;
         double edges_inside_cluster = 0.0;
         int all_edges = 0;
         for (const auto& n : cuts_node_vector[i]) {
             for (IncEdgeIt e(gc.g, n); e != INVALID; ++e) {
                 all_edges += 1;
-                if (count(cuts_node_vector[i].begin(),
-                          cuts_node_vector[i].end(), gc.g.target(e)) > 0) {
-                    edges_inside_cluster = edges_inside_cluster + 1.0;
+                if (count(cuts_node_vector[i].begin(), cuts_node_vector[i].end(), gc.g.target(e)) > 0 && count(cuts_node_vector[i].begin(), cuts_node_vector[i].end(), gc.g.source(e)) > 0) {
+                    edges_inside_cluster++;
+                    internal_volume++;
+
                 }
-            }
+                else {edges_outside_cluster += 1.0; coms_volume += 1.0;}
+        }   }
+
+        //For singletons, we are not double counting
+        
+        if (cuts_node_vector[i].size() == 1) {
+            //edges_inside_cluster++;
+            internal_volume++;
+            //coms_volume++;
+            ;  
         }
+
         cout << "edges inside cluster/total cluster edges;"
              << edges_inside_cluster << ";" << all_edges << endl;
         node_ratio_edges_inside.push_back((double)edges_inside_cluster /
@@ -3371,9 +3388,12 @@ main(int argc, char** argv)
         max_size_cluster = max(max_size_cluster, all_edges);
         min_size_cluster = min(min_size_cluster, all_edges);
         max_unbalance = max(double(max_unbalance), double((1.*max_size_cluster)/(1.*min_size_cluster)));
-        coms_volume += all_edges - edges_inside_cluster;
-    }
 
+    }
+    internal_volume = internal_volume / 2;
+    coms_volume = coms_volume / 2.;
+    cout << "internal volume: " << internal_volume << " coms_volume: " << coms_volume << " num edges: " << gc.num_edges << endl;
+    assert(internal_volume + coms_volume == gc.num_edges);
 
     int i = 0;
     int n_clusters = 0;
