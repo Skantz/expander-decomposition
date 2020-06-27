@@ -24,7 +24,6 @@
 #include <sstream>
 
 #include "cxxopts.hpp"
-#include "preliminaries.h"
 
 #include <omp.h>
 #include <sched.h>
@@ -2591,9 +2590,8 @@ decomp(GraphContext& gc, Configuration config,
 
     // Q: should be an improvement. But this will affect balance. re-calculate?
     //TOOD: use this heuristic
-    /*
     cut = connected_component_from_cut(gc, cut);
-    */
+
     int cut_vol = cut_volume(gc, cut);
 
     double h = double(gc.num_edges) / (10. *
@@ -3376,10 +3374,12 @@ main(int argc, char** argv)
         
         if (cuts_node_vector[i].size() == 1) {
             //edges_inside_cluster++;
-            internal_volume++;
+            //internal_volume +=1;
+            edges_inside_cluster+=1;
             //coms_volume++;
             ;  
         }
+
 
         cout << "edges inside cluster/total cluster edges;"
              << edges_inside_cluster << ";" << all_edges << endl;
@@ -3390,6 +3390,8 @@ main(int argc, char** argv)
         max_unbalance = max(double(max_unbalance), double((1.*max_size_cluster)/(1.*min_size_cluster)));
 
     }
+
+    cout << "singletons: " << n_singletons << endl;
     internal_volume = internal_volume / 2;
     coms_volume = coms_volume / 2.;
     cout << "internal volume: " << internal_volume << " coms_volume: " << coms_volume << " num edges: " << gc.num_edges << endl;
@@ -3416,11 +3418,13 @@ main(int argc, char** argv)
     }
 
     i = 0;
+
+    //NOT a good reason to abort!
     for (const auto& r : node_ratio_edges_inside) {
         cout << "inside cluster vol/total vol cluster;" << r << endl;
         double goal = pow(config.G_phi_target, stats.traces[i].depth);
-        assert (0.0 <= goal && goal <= 1.0);
-        assert ((0.0 < goal && goal < 1.0) || config.G_phi_target == 0 || config.G_phi_target == 1);
+        //assert (0.0 <= goal && goal <= 1.0);
+        //assert ((0.0 < goal && goal < 1.0) || config.G_phi_target == 0 || config.G_phi_target == 1);
         warn(r >= goal, "did not meet conductance goal?", __LINE__);
         i++;
     }
