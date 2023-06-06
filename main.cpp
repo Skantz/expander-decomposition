@@ -1,8 +1,10 @@
 //  Cut-matching component authored Ludvig Janiuk 2019 as part of individual
 //  project at KTH. Rest, by me.
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "cert-msc32-c"
 #pragma ide diagnostic ignored "cppcoreguidelines-slicing"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -175,8 +177,8 @@ struct SubdividedGraphContext {
     G sub_g;
     NodeMapb nf;
     EdgeMapb ef;
-    NodeMap<Node> n_cross_ref;
     NodeMap<Node> n_ref;
+    NodeMap<Node> n_cross_ref;
     NodeMap<bool> origs;
     SubGraph<G> only_splits;
     vector<Node> split_vertices;
@@ -352,8 +354,8 @@ parse_chaco_format(const string& filename, ListGraph& g, vector<Node>& nodes)
     getline(file, line);
     ss.str(line);
 
-    int n_verts;
-    int n_edges;
+    unsigned long n_verts;
+    unsigned long n_edges;
     ss >> n_verts >> n_edges;
     l.progress() << "Reading a graph with V " << n_verts << "E " << n_edges
                  << endl;
@@ -403,7 +405,7 @@ generate_large_graph(G& g, vector<Node>& nodes, size_t n_nodes)
 {
     assert(n_nodes > 0);
     nodes.reserve(n_nodes);
-    for (int i = 0; i < n_nodes; i++) {
+    for (unsigned long i = 0; i < n_nodes; i++) {
         nodes.push_back(g.addNode());
     }
 
@@ -411,20 +413,20 @@ generate_large_graph(G& g, vector<Node>& nodes, size_t n_nodes)
     g.addEdge(nodes[1], nodes[2]);
     g.addEdge(nodes[2], nodes[0]);
 
-    int lim1 = n_nodes / 3;
-    int lim2 = 2 * n_nodes / 3;
+    unsigned long lim1 = n_nodes / 3;
+    unsigned long lim2 = 2 * n_nodes / 3;
 
-    for (int i = 3; i < lim1; i++) {
+    for (unsigned long i = 3; i < lim1; i++) {
         ListGraph::Node u = nodes[i];
         ListGraph::Node v = nodes[0];
         g.addEdge(u, v);
     }
-    for (int i = lim1; i < lim2; i++) {
+    for (unsigned long i = lim1; i < lim2; i++) {
         ListGraph::Node u = nodes[i];
         ListGraph::Node v = nodes[1];
         g.addEdge(u, v);
     }
-    for (int i = lim2; i < n_nodes; i++) {
+    for (unsigned long i = lim2; i < n_nodes; i++) {
         ListGraph::Node u = nodes[i];
         ListGraph::Node v = nodes[2];
         g.addEdge(u, v);
@@ -615,7 +617,7 @@ struct CutMatching {
                 default_random_engine& random_engine_)
         : config(config_), gc(gc), sgc{gc}, random_engine(random_engine_)
     {
-        assert(gc.nodes.size() % 2 == 0);
+        assert(static_cast<int>(gc.nodes.size()) % 2 == 0);
         assert(!gc.nodes.empty()) ;
         assert(connected(gc.g));
 
@@ -660,7 +662,7 @@ struct CutMatching {
                     cut->insert(n);
 }
             }
-            return move(cut);
+            return cut;
         }
 
         void
@@ -777,18 +779,18 @@ struct CutMatching {
 
     auto
     bin_search_flows(MatchingContext& mg, unique_ptr<FlowAlgo>& p,
-                     size_t flow_target) const -> MatchResult
+                     unsigned long flow_target) const -> MatchResult
     {
         auto start = now();
-        size_t cap = 1;
-        // for (; cap < mg.gc.nodes.size(); cap *= 2) {
+        unsigned long cap = 1;
+        // for (; cap < mg.static_cast<int>(gc.nodes.size()); cap *= 2) {
         for (; cap < flow_target * 2; cap *= 2) {
             l.progress() << "Cap " << cap << " ... " << flush;
             set_matching_capacities(mg, cap);
             run_min_cut(mg, p);
 
-            // bool reachedFullFlow = p->flowValue() == mg.gc.nodes.size() / 2;
-            bool reachedFullFlow = p->flowValue() >= flow_target;
+            // bool reachedFullFlow = p->flowValue() == mg.static_cast<int>(gc.nodes.size()) / 2;
+            bool reachedFullFlow = static_cast<unsigned long>(p->flowValue()) >= flow_target;
             if (reachedFullFlow) {
                 l.debug()
                     << "We have achieved full flow, but half this capacity "
@@ -936,7 +938,7 @@ struct CutMatching {
         make_sink_source(mg.g, mg, bisection);
 
         unique_ptr<FlowAlgo> p;
-        MatchResult mr = bin_search_flows(mg, p, gc.nodes.size() / 2);
+        MatchResult mr = bin_search_flows(mg, p, static_cast<int>(gc.nodes.size()) / 2);
 
         decompose_paths(mg, p, m_out);
 
@@ -960,9 +962,7 @@ struct CutMatching {
     {
         MatchingContext mg(sgc.sub_g);
         make_sink_source(sgc.only_splits, mg, bisection);
-        // TODO: so have s, t been created on the big greaph?
-        Node s = mg.s;
-        int id = G::id(s);
+        // TODO: so have s, t been created on the big graph?
         // cout << id << endl;
         // cout << countNodes(sgc.sub_g) << endl;
 
@@ -1021,7 +1021,7 @@ struct CutMatching {
         report->index = sub_past_rounds.size();
         report->capacity_required_for_full_flow = mr.capacity;
         report->cut = move(mr.cut_from_flow);
-        auto cs = CutStats<G>(gc.g, gc.nodes.size(), *report->cut);
+        auto cs = CutStats<G>(gc.g, static_cast<int>(gc.nodes.size()), *report->cut);
         report->g_expansion = cs.expansion();
         l.progress() << "G cut expansion " << report->g_expansion << endl;
         report->volume = cs.minside_volume();
@@ -1039,7 +1039,6 @@ struct CutMatching {
     {
         unique_ptr<RoundReport> report = make_unique<RoundReport>();
 
-        double h_multi_out_sub = 0;
         // Bisectionp sub_bisection = cut_player(sgc.only_splits, sub_matchings,
         // h_multi_out_sub);
         Bisectionp sub_bisection = cut_player(sgc.only_splits, sub_matchings,
@@ -1082,7 +1081,7 @@ struct CutMatching {
         report->relatively_balanced = report->volume >= sub_volume_treshold();
         //cout << "Volume is: " << report->volume << " Threshold is: " <<
         //    sub_volume_treshold() << endl;
-        return move(report);
+        return report;
         // Thing is, the cut is not a "materialized cut" in the subdiv graph.
         // But the stats we want are the implied cut on the orig graph.
     }
@@ -1355,10 +1354,10 @@ digraph_from_graph(G& g, DG& dg) -> ListDigraph*
 }
 
     for (EdgeIt a(g); a != INVALID; ++a) {
-        Arc a1 = dg.addArc(DG::nodeFromId(G::id(g.u(a))),
-                           DG::nodeFromId(G::id(g.v(a))));
-        Arc a2 = dg.addArc(DG::nodeFromId(G::id(g.v(a))),
-                           DG::nodeFromId(G::id(g.u(a))));
+        dg.addArc(DG::nodeFromId(G::id(g.u(a))),
+                  DG::nodeFromId(G::id(g.v(a))));
+        dg.addArc(DG::nodeFromId(G::id(g.v(a))),
+                  DG::nodeFromId(G::id(g.u(a))));
     }
 
     return &dg;
@@ -1401,10 +1400,10 @@ struct flow_instance {
           reverse_arc(dg_),
           node_flow(dg_, 0.0),
           node_cap(dg_, 0.0),
-          node_label(dg_, 0),
-          initial_mass(dg_, 0.0){};
+          initial_mass(dg_, 0.0),
+          node_label(dg_, 0){};
 
-    int h{};
+    unsigned long h{};
     double phi{};
     int n{};
     int e{};
@@ -1416,7 +1415,7 @@ struct flow_instance {
     DGNodeMap<double> node_flow;
     DGNodeMap<double> node_cap;
     DGNodeMap<double> initial_mass;
-    DGNodeMap<int> node_label;
+    DGNodeMap<unsigned long> node_label;
 
     set<DGNode> A;
     set<DGNode> R;
@@ -1439,15 +1438,13 @@ OutDegree(DG& dg, DGNode n) -> int
 auto
 level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue) -> set<DGNode>
 {
-    int n_cut = fp.A.size();
     int cut_index = level_queue.size() - 1;
-    int cut_sum = 0;
     int s_vol = 0;
     int z_i = 0;
 
     set<DGNode> trimmed_nodes;
     int e = fp.e;
-    int n_upper_nodes = 0;
+    unsigned long n_upper_nodes = 0;
     cout << "local flow: start level cut" << endl;
 
     for (int i = level_queue.size() - 1; i > 0; i--) {
@@ -1463,7 +1460,6 @@ level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue) -> set<D
 }
         // else
         //    continue;
-        int r_count = 0;
         n_upper_nodes += level_queue[i].size();
         for (auto& n : level_queue[i]) {
             if (fp.R.count(n) != 0U) {
@@ -1521,7 +1517,7 @@ level_cut(DG& dg, flow_instance& fp, vector<list<DGNode>>& level_queue) -> set<D
         }
     }
 
-    int old_A = fp.A.size();
+    unsigned long old_A = fp.A.size();
     fp.A.clear();
 
     for (auto& lst : level_queue) {
@@ -1560,23 +1556,23 @@ void
 uf(DG& dg, flow_instance& fp, const Configuration& conf)
 {
     bool excess_flow;
+    (void)excess_flow;
     //assert(fp.A.size() > 0 && fp.R.size() > 0 && fp.A.size() >= fp.R.size());
     assert(fp.A.size() >= fp.R.size());
     // Set up level queues
     vector<list<DGNode>> level_queue;
-    for (int i = 0; i < fp.h; i++) {
+    for (unsigned long i = 0; i < fp.h; i++) {
         level_queue.emplace_back();
     }
 
-unit_setup:
     level_queue.clear();
 
     //Q: fp.h
-    for (int i = 0; i < fp.h && i < fp.A.size(); i++) {
+    for (unsigned long i = 0; i < fp.h && i < fp.A.size(); i++) {
         level_queue.emplace_back();
     }
 
-    for (int i = 0; i < fp.h && i < fp.A.size(); i++) {
+    for (unsigned long i = 0; i < fp.h && i < fp.A.size(); i++) {
         level_queue[i].clear();
         assert(level_queue[i].empty());
     }
@@ -1702,9 +1698,9 @@ unit_start:
         int lv = fp.node_label[n];
         //assert(find(level_queue[lv].begin(), level_queue[lv].end(), n) !=
         //       level_queue[lv].end());
-        int c1 = level_queue[lv + 1].size();
+        unsigned long c1 = level_queue[lv + 1].size();
         level_queue[lv + 1].push_back(n);
-        int c2 = level_queue[lv].size();
+        unsigned long c2 = level_queue[lv].size();
         level_queue[lv].remove(n);
         fp.node_label[n] = fp.node_label[n] + 1;
         nlp.label = nlp.label + 1;
@@ -1780,7 +1776,7 @@ auto
 slow_trimming(GraphContext& gc, const Configuration&  /*conf*/, set<Node> cut, double phi) -> set<Node>
 {
     // Q: why? is this necessary or assumption?
-    // assert(cut.size() >= gc.nodes.size() / 2);
+    // assert(cut.size() >= static_cast<int>(gc.nodes.size()) / 2);
     DG sg;
     DGNodeMap<Node> sg_to_orig(sg);
     NodeMap<DGNode> orig_to_sg(gc.g);
@@ -1868,7 +1864,6 @@ slow_trimming(GraphContext& gc, const Configuration&  /*conf*/, set<Node> cut, d
     cut.clear();
 
     for (DGNodeIt n(sg); n != INVALID; ++n) {
-        double out_flow = 0;
         //for (DGOutArcIt e(sg, n); e != INVALID; ++e) {
         //    out_flow += preflow.flow(e);
         //}
@@ -1907,7 +1902,7 @@ trimming(GraphContext& gc, const Configuration& conf, set<Node> cut, double phi)
     digraph_from_graph(gc.g, dg);
 
     flow_instance fp = flow_instance(dg, phi);
-    fp.n = gc.nodes.size();
+    fp.n = static_cast<int>(gc.nodes.size());
     fp.e = gc.num_edges;
     set<Node>   R_ug;
     set<DGNode> R;
@@ -1935,7 +1930,6 @@ trimming(GraphContext& gc, const Configuration& conf, set<Node> cut, double phi)
     fp.phi = phi;
     // Wasteful but still mlogm
     // Crossing edge sources
-    bool added_source = false;
 
     // set sink capacities
     // Q: equals degree?
@@ -2023,16 +2017,14 @@ graph_from_cut(GraphContext& g, GraphContext& sg, const set<Node>& cut)
         self_loops_added_to_node[n] = 0;
     }
     //map<Node, bool> added;
-    int sum_all_edges = 0;
-    int self_loops = 0;
     for (const auto& n : cut) {
         for (IncEdgeIt a(g.g, n); a != INVALID; ++a) {
             if (cut.count(g.g.target(a)) > 0 && cut.count(g.g.source(a)) > 0 &&
                 G::id(g.g.source(a)) < G::id(g.g.target(a))) {
                 //assert(reverse_map[n] !=
                 //       reverse_map[g.g.target(a)]);  // no self -loop
-                assert(sg.g.id(reverse_map[g.g.source(a)]) < sg.nodes.size() &&
-                       sg.g.id(reverse_map[g.g.target(a)]) < sg.nodes.size());
+                assert(sg.g.id(reverse_map[g.g.source(a)]) < static_cast<int>(sg.nodes.size()) &&
+                       sg.g.id(reverse_map[g.g.target(a)]) < static_cast<int>(sg.nodes.size()));
                 sg.g.addEdge(reverse_map[g.g.source(a)],
                              reverse_map[g.g.target(a)]);
                 sg.num_edges++;
@@ -2110,8 +2102,6 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut,
     for (NodeIt n(sg.g); n != INVALID; ++n) {
         self_loops_added_to_node[n] = 0;
     }
-    int sum_all_edges = 0;
-    int new_self_loops = 0;
     for (const auto& n : cut) {
         for (IncEdgeIt a(g.g, n); a != INVALID; ++a) {
 
@@ -2119,8 +2109,8 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut,
                 G::id(g.g.source(a)) < G::id(g.g.target(a))) {
                 //assert(reverse_map[n] !=
                 //       reverse_map[g.g.target(a)]);  // no self -loop
-                assert(sg.g.id(reverse_map[g.g.source(a)]) < sg.nodes.size() &&
-                       sg.g.id(reverse_map[g.g.target(a)]) < sg.nodes.size());
+                assert(sg.g.id(reverse_map[g.g.source(a)]) < static_cast<int>(sg.nodes.size()) &&
+                       sg.g.id(reverse_map[g.g.target(a)]) < static_cast<int>(sg.nodes.size()));
                 sg.g.addEdge(reverse_map[g.g.source(a)],
                              reverse_map[g.g.target(a)]);
                 sg.num_edges++;
@@ -2139,7 +2129,6 @@ graph_from_cut(GraphContext& g, GraphContext& sg, set<Node> cut,
         }
     }
     sg.num_edges = countEdges(sg.g);
-    int self_loops = 0;
     #if DEBUG == 1
     for (NodeIt n(sg.g); n != INVALID; ++n) {
         int c = 0;
@@ -2174,13 +2163,13 @@ find_connected_components(GraphContext& g) -> vector<set<Node>>
     // bfs.init();
     // bfs.start();
 
-    int n_visited = 0;
-    int cc = 0;
+    unsigned long n_visited = 0;
+    unsigned long cc = 0;
     Node source;
     Node y;
 
     // Q:
-    int test_check = 0;
+    unsigned long test_check = 0;
     for (NodeIt n(g.g); n != INVALID; ++n) {
         test_check = test_check + 1;
 }
@@ -2228,8 +2217,7 @@ find_connected_components(GraphContext& g) -> vector<set<Node>>
         assert(!labels[cc].empty());
         cc++;
     }
-return_labels:
-    int tot = 0;
+    unsigned long tot = 0;
     for (auto& l : labels) {
         tot = tot + l.size();
 }
@@ -2365,7 +2353,6 @@ cut_from_cm(GraphContext& gc, const Configuration& config) -> set<Node>
 auto
 standalone_conductance(GraphContext& gc, const set<Node>& cut) -> double
 {
-    int e = gc.num_edges;
     int edges_interior = 0;
     int cross_edges = 0;
     int complement_edges = 0;
@@ -2406,16 +2393,16 @@ void
 run_cut_matching(GraphContext& gc, Configuration& config, cm_result& cm_res)
 {
     assert(connected(gc.g));
-    assert(gc.nodes.size() > 2);
+    assert(static_cast<int>(gc.nodes.size()) > 2);
 
     Node temp_node;
     Edge temp_edge;
 
     bool added_node = false;
-    if (gc.nodes.size() % 2 != 0) {
+    if (static_cast<int>(gc.nodes.size()) % 2 != 0) {
         added_node = true;
         temp_node = gc.g.addNode();
-        temp_edge = gc.g.addEdge(gc.nodes[gc.nodes.size() - 2], temp_node);
+        temp_edge = gc.g.addEdge(gc.nodes[static_cast<int>(gc.nodes.size()) - 2], temp_node);
         gc.nodes.push_back(temp_node);
         gc.num_edges++;
     }
@@ -2453,7 +2440,7 @@ run_cut_matching(GraphContext& gc, Configuration& config, cm_result& cm_res)
          << best_round->index << endl;
     cout << "Best cut sparsity: " << endl;
     auto& best_cut = best_round->cut;
-    CutStats<G> cs = CutStats<G>(gc.g, gc.nodes.size(), *best_cut);
+    CutStats<G> cs = CutStats<G>(gc.g, static_cast<int>(gc.nodes.size()), *best_cut);
     cs.print();
     int crossing_edges = cs.crossing_edges;
 
@@ -2507,11 +2494,6 @@ auto
 cut_volume(GraphContext& gc, const set<Node>& cut) -> int
 {
     int cut_volume = 0;
-    auto in_cut = [&](const G& g, const set<Node>& c, const Edge& e) {
-        bool u_in = c.count(g.u(e)) != 0U;
-        bool v_in = c.count(g.v(e)) != 0U;
-        return u_in || v_in;
-    };
 
     for (EdgeIt e(gc.g); e != INVALID; ++e) {
 
@@ -2531,7 +2513,6 @@ cut_volume(GraphContext& gc, const set<Node>& cut) -> int
 
     assert(cut.size() <= gc.nodes.size());
     assert(cut_volume <= gc.num_edges * 2);
-    size_t other_size = gc.nodes.size() - cut.size();
     return cut_volume;
 }
 
@@ -2558,16 +2539,15 @@ decomp(GraphContext& gc, Configuration config,
        decomp_trace trace) -> vector<map<Node, Node>>
 {
     trace.depth += 1;
-    trace.size = gc.nodes.size();
+    trace.size = static_cast<int>(gc.nodes.size());
     stats.n_decomps += 1;
     cout << "####" << stats.n_decomps << endl;
-    int x = 0;
 
     if (gc.nodes.empty()) {
         return node_maps_to_original_graph;
 }
 
-    if (gc.nodes.size() == 1) {
+    if (static_cast<int>(gc.nodes.size()) == 1) {
         node_maps_to_original_graph.push_back(map_to_original_graph);
         return node_maps_to_original_graph;
     }
@@ -2592,7 +2572,7 @@ decomp(GraphContext& gc, Configuration config,
             node_maps_to_original_graph.insert(
                 node_maps_to_original_graph.end(), decomp_map.begin(),
                 decomp_map.end());
-            node_cnt = node_cnt + sg.nodes.size();
+            node_cnt = node_cnt + static_cast<int>(sg.nodes.size());
         }
         return node_maps_to_original_graph;
     }
@@ -2602,7 +2582,7 @@ decomp(GraphContext& gc, Configuration config,
     #endif
 
     // TOFIX check expansion
-    if (gc.nodes.size() == 2) {
+    if (static_cast<int>(gc.nodes.size()) == 2) {
         map<Node, Node> map_1 = {
             {G::nodeFromId(0), map_to_original_graph[G::nodeFromId(0)]}};
         map<Node, Node> map_2 = {
@@ -2682,10 +2662,11 @@ decomp(GraphContext& gc, Configuration config,
 
     // break early due to balanced and good cut
     else if (cut_is_good && balanced) {
-        assert(!cut.empty() != gc.nodes.size());
+        assert(!cut.empty() != static_cast<int>(gc.nodes.size()));
         int t = NUM_THREADS;
         int edge_count = 0;
-        bool done_recurse;
+	    bool done_recurse = false;
+        (void) done_recurse;
 #pragma omp parallel for num_threads(t) schedule(dynamic, 1)
         for (int i = 0; i < 2; i++) {
             int thread_num = omp_get_thread_num();
@@ -2742,7 +2723,7 @@ decomp(GraphContext& gc, Configuration config,
         }
 
         cout << "Call local flow with cut of size: " << cut.size() << " / "
-             << gc.nodes.size() << endl;
+             << static_cast<int>(gc.nodes.size()) << endl;
         cout << "local flow: conductance before: " << endl;
         standalone_conductance(gc, cut);
         set<Node> cut_saved = cut;
@@ -2864,11 +2845,11 @@ butterfly_test(const Configuration& config, int ls, int rs, int conn_ls, int con
     assert(!connected(sg.g));
 
     set<Node> new_cut = slow_trimming(gc, config, cut,
-                                      1. / pow(gc.nodes.size(), 2));
+                                      1. / pow(static_cast<int>(gc.nodes.size()), 2));
     GraphContext sg_2;
     graph_from_cut(gc, sg_2, new_cut);
     assert(connected(sg_2.g));
-    new_cut = trimming(gc, config, cut, 1. / pow(gc.nodes.size(), 2));
+    new_cut = trimming(gc, config, cut, 1. / pow(static_cast<int>(gc.nodes.size()), 2));
     for (auto& n : new_cut) {
         cout << G::id(n) << endl;
     }
@@ -2889,7 +2870,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     conf.G_phi_target = PHI_UNREACHABLE;
 
     /*
-    for (int i = 0; i < gc.nodes.size(); i++) {
+    for (int i = 0; i < static_cast<int>(gc.nodes.size()); i++) {
         indices.push_back(i);
     }
     */
@@ -2907,13 +2888,13 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     }
 
 
-    //double ratio_to_remove = 1./gc.nodes.size();
+    //double ratio_to_remove = 1./static_cast<int>(gc.nodes.size());
 
     double h_ratio = conf.h_ratio;
     if (h_ratio <= 0.) {
         h_ratio = (double(gc.num_edges) /
                     (10. * conf.volume_treshold_factor *
-                     pow(log(gc.num_edges), 2))) / gc.nodes.size();
+                     pow(log(gc.num_edges), 2))) / static_cast<int>(gc.nodes.size());
     cout << "local flow:, set h_ratio to " << h_ratio << endl;
     }
 
@@ -2931,7 +2912,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
         double node_fraction_to_remove = random_fraction(r_engine);
         cout << node_fraction_to_remove << " fraction" << endl;
 
-        for (int i = 0; i < gc.nodes.size(); i++) {
+        for (int i = 0; i < static_cast<int>(gc.nodes.size()); i++) {
             indices.push_back(i);
         }
 
@@ -2939,7 +2920,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
                 default_random_engine(random_device()()));
 
         indices.erase(indices.begin(),
-                      indices.begin() + gc.nodes.size() * node_fraction_to_remove);
+                      indices.begin() + static_cast<int>(gc.nodes.size()) * node_fraction_to_remove);
 
         for (auto& i : indices) {
             cut.insert(G::nodeFromId(i));
@@ -2948,7 +2929,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
         cout << indices[0] << " indices 0" << endl;
         cout << "nodes in cut" << indices.size() << endl;
 
-        assert(gc.nodes.size() >= cut.size() > 0);
+        assert(gc.nodes.size() >= cut.size() && cut.size() > 0);
 
         graph_from_cut(gc, sg, cut);
         iter++;
@@ -2959,7 +2940,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     //phi = 1. / (gc.num_edges);
 
     //assert(!connected(sg.g));
-    cout << "nodes orig" << gc.nodes.size() << endl;
+    cout << "nodes orig" << static_cast<int>(gc.nodes.size()) << endl;
     cout << "nodes cut" << cut.size() << endl;
     set<Node> scut = slow_trimming(gc, conf, cut, phi);
     set<Node> scut2 = slow_trimming(gc, conf, scut, phi);
@@ -2968,7 +2949,7 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     graph_from_cut(gc, sg_slow, scut2);
     graph_from_cut(gc, sg_fast, fcut);
     // assert(sg_slow.num_edges == sg_fast.num_edges > 0);
-    // assert(gc.nodes.size() >= sg_slow.nodes.size() > 0);
+    // assert(static_cast<int>(gc.nodes.size()) >= sg_slow.nodes.size() > 0);
 
     cout << "connected slow?" << connected(sg_slow.g) << endl;
     cout << "connected fast?" << connected(sg_fast.g) << endl;
@@ -2997,13 +2978,13 @@ test_connect_subgraph(GraphContext& gc, Configuration conf, double phi)
     if (connected(sg.g)) {
         cm_result cm_res_sub;
         run_cut_matching(sg, conf, cm_res_sub);
-        cout << "exptest: lowest conductance after (after cut, before trim) <-- " << cm_res_sub.best_conductance << " cut size " << sg.nodes.size() << "/" << gc.nodes.size() << endl;
+        cout << "exptest: lowest conductance after (after cut, before trim) <-- " << cm_res_sub.best_conductance << " cut size " << static_cast<int>(sg.nodes.size()) << "/" << static_cast<int>(gc.nodes.size()) << endl;
     }
     cout << "phi used (0.8 * best before * 0.16) " << phi << endl;
     cout << "exptest: graph connected after cut? " << connected(sg.g) << endl;
-    cout << "exptest: lowest conductance before       <-- " << cm_res.best_conductance      << " cut size " << indices.size()       << "/" << gc.nodes.size() << " (in theory, we should only remove h = " << h << " nodes)" << endl;
-    cout << "exptest: lowest conductance after (slow) <-- " << cm_res_slow.best_conductance << " cut size " << sg_slow.nodes.size() << "/" << gc.nodes.size() << endl;
-    cout << "exptest: lowest conductance after (fast) <-- " << cm_res_fast.best_conductance << " cut size " << sg_fast.nodes.size() << "/" << gc.nodes.size() << endl; 
+    cout << "exptest: lowest conductance before       <-- " << cm_res.best_conductance      << " cut size " << indices.size()       << "/" << static_cast<int>(gc.nodes.size()) << " (in theory, we should only remove h = " << h << " nodes)" << endl;
+    cout << "exptest: lowest conductance after (slow) <-- " << cm_res_slow.best_conductance << " cut size " << sg_slow.nodes.size() << "/" << static_cast<int>(gc.nodes.size()) << endl;
+    cout << "exptest: lowest conductance after (fast) <-- " << cm_res_fast.best_conductance << " cut size " << sg_fast.nodes.size() << "/" << static_cast<int>(gc.nodes.size()) << endl; 
     cout << "===" << endl;
 }
 
@@ -3034,20 +3015,20 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
         cut.clear();
 
         vector<int> indices;
-        for (int i = 0; i < gc.nodes.size(); i++) {
+        for (int i = 0; i < static_cast<int>(gc.nodes.size()); i++) {
             indices.push_back(i);
         }
 
         shuffle(indices.begin(), indices.end(),
                 default_random_engine(random_device()()));
         indices.erase(indices.begin(),
-                      indices.begin() + gc.nodes.size() * conf.h_ratio);
+                      indices.begin() + static_cast<int>(gc.nodes.size()) * conf.h_ratio);
 
         for (auto& i : indices) {
             cut.insert(G::nodeFromId(i));
         }
 
-        assert(gc.nodes.size() >= cut.size() > 0);
+        assert(gc.nodes.size() >= cut.size() && cut.size() > 0);
 
         graph_from_cut(gc, sg, cut);
         //Test connectivity elsewhere
@@ -3078,7 +3059,7 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
     }
     cout << endl;
 
-    cout << "nodes orig" << gc.nodes.size() << endl;
+    cout << "nodes orig" << static_cast<int>(gc.nodes.size()) << endl;
     cout << "nodes cut" << cut.size() << endl;
     set<Node> scut  = slow_trimming(gc, conf, cut, phi);
     set<Node> scut2 = slow_trimming(gc, conf, scut, phi);
@@ -3089,7 +3070,7 @@ test_expander_ratio(GraphContext& gc, Configuration conf, double phi_ratio_targe
     graph_from_cut(gc, sg_slow, scut2);
     graph_from_cut(gc, sg_fast, fcut);
     // assert(sg_slow.num_edges == sg_fast.num_edges > 0);
-    // assert(gc.nodes.size() >= sg_slow.nodes.size() > 0);
+    // assert(static_cast<int>(gc.nodes.size()) >= sg_slow.nodes.size() > 0);
 
     conf.G_phi_target = phi * phi_ratio_target;
     cm_result cm_res_slow;
@@ -3115,7 +3096,7 @@ auto random_walk_distribution(GraphContext& gc, const set<Node>& cut, long walk_
     }
     assert (cut.size() > 1);
 
-    uniform_int_distribution<int> random_int(0, gc.nodes.size() - 1);
+    uniform_int_distribution<int> random_int(0, static_cast<int>(gc.nodes.size()) - 1);
     random_device rd;
     default_random_engine r_engine(rd());
 
@@ -3124,18 +3105,18 @@ auto random_walk_distribution(GraphContext& gc, const set<Node>& cut, long walk_
 
     map<Node, int> counts;
     map<Node, vector<Node>> nbors_lst;
-    map<Node, int> nbors;
+    map<Node, unsigned long> nbors;
 
     vector<double> mixing_rates;
 
     int tot_c = 0;
     for (NodeIt n(gc.g); n != INVALID; ++n) {
         counts[n] = 0;
-        assert (0 <= gc.g.id(n) && gc.g.id(n) < gc.nodes.size());
+        assert (0 <= gc.g.id(n) && gc.g.id(n) < static_cast<int>(gc.nodes.size()));
         nbors_lst[n] = vector<Node>();
         int c = 0;
         for (IncEdgeIt e(gc.g, n); e != INVALID; ++e) {
-            assert(gc.g.id(gc.g.target(e)) < gc.nodes.size() && gc.g.id(gc.g.target(e)) >= 0);
+            assert(gc.g.id(gc.g.target(e)) < static_cast<int>(gc.nodes.size()) && gc.g.id(gc.g.target(e)) >= 0);
             nbors_lst[n].push_back(gc.g.target(e));
             c++;
         }
@@ -3158,17 +3139,17 @@ auto random_walk_distribution(GraphContext& gc, const set<Node>& cut, long walk_
             assert (nbors[curr_node] >= 1);
             if (nbors_lst[curr_node][0] == curr_node) { assert(nbors[curr_node] > 1);
 }
-            assert(gc.g.id(curr_node) < nbors.size());
+            assert(gc.g.id(curr_node) < static_cast<int>(nbors.size()));
             uniform_int_distribution<int> random_nbor_index(0, nbors[curr_node] - 1);
             //if (nbors[curr_node] <= 1) continue;
             random_device rd_;
             default_random_engine r_engine_(rd_());
-            int next_index = random_nbor_index(r_engine_);
+            unsigned long next_index = random_nbor_index(r_engine_);
 
             assert (next_index < nbors_lst[curr_node].size());
 
             counts[curr_node]++;
-            assert (0 <= next_index <= nbors_lst[curr_node].size());
+            assert (next_index <= nbors_lst[curr_node].size());
             curr_node = nbors_lst[curr_node][next_index];
             long saved_steps = n_steps;
             n_steps++;
@@ -3179,14 +3160,14 @@ auto random_walk_distribution(GraphContext& gc, const set<Node>& cut, long walk_
             double assert_check_max = 0.;
             if (j % check_convergence_every_n == 0) {
                 l1_dist = 0.;
-                double uniform_expectation = 1./gc.nodes.size();
-                assert (uniform_expectation > 0 && uniform_expectation <= 1. / (1. * gc.nodes.size()));
+                double uniform_expectation = 1./static_cast<int>(gc.nodes.size());
+                assert (uniform_expectation > 0 && uniform_expectation <= 1. / (1. * static_cast<int>(gc.nodes.size())));
                 double total_visited_nodes = 1. * n_steps;
-                double mean_degree = 2. * gc.num_edges / (1. * gc.nodes.size());
-                double norm_term = (1. * total_visited_nodes) / (1. *gc.nodes.size());
+                double mean_degree = 2. * gc.num_edges / (1. * static_cast<int>(gc.nodes.size()));
+                double norm_term = (1. * total_visited_nodes) / (1. *static_cast<int>(gc.nodes.size()));
                 assert(uniform_expectation > 0 && total_visited_nodes > 0 && mean_degree > 0 && norm_term > 0);
                 for (NodeIt n(gc.g); n != INVALID; ++n) {
-                    //double d = abs(1./gc.nodes.size() - ((1. * counts[n]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* gc.nodes.size())) / ( 1.*nbors[gc.g.nodeFromId(i)]));
+                    //double d = abs(1./static_cast<int>(gc.nodes.size()) - ((1. * counts[n]) / (n_trials * walk_length))) * (((1.* gc.num_edges)/ (1.* static_cast<int>(gc.nodes.size()))) / ( 1.*nbors[gc.g.nodeFromId(i)]));
                     double vertex_norm = mean_degree / (1. * nbors[n]);
                     //this can be positive.
                     double ratio_visited_this_node = (1. * counts[n]) / total_visited_nodes;
@@ -3201,7 +3182,7 @@ auto random_walk_distribution(GraphContext& gc, const set<Node>& cut, long walk_
                 }
                 assert(assert_check_max >= uniform_expectation);
 
-                double delta = gc.nodes.size() * (old_l1_dist - l1_dist) / double(check_convergence_every_n);
+                double delta = static_cast<int>(gc.nodes.size()) * (old_l1_dist - l1_dist) / double(check_convergence_every_n);
                 mixing_rates.push_back(delta);
                 old_l1_dist = l1_dist;
             }
@@ -3213,7 +3194,6 @@ auto random_walk_distribution(GraphContext& gc, const set<Node>& cut, long walk_
         }
     }
 
-    int n = mixing_rates.size();
     double mixings_sum = 0;
     for (auto& m: mixing_rates) {
         mixings_sum += m;
@@ -3235,8 +3215,8 @@ test_expander(GraphContext& gc, const Configuration& conf, double  /*phi*/)
         full_graph_cut.insert(n);
     }
 
-    //int walk_length = log(gc.nodes.size());
-    //int n_trials = 100 * gc.nodes.size() / walk_length;
+    //int walk_length = log(static_cast<int>(gc.nodes.size()));
+    //int n_trials = 100 * static_cast<int>(gc.nodes.size()) / walk_length;
     int n_trials = 1;
     long walk_length = LONG_MAX;
     //walk_length * n_trials = 100 * gc nodes.size;
@@ -3246,7 +3226,7 @@ test_expander(GraphContext& gc, const Configuration& conf, double  /*phi*/)
     if (conf.partition_file.empty()) {
         cout << "start random walk of length " << walk_length << " with n trials: " << n_trials << endl;
         int n_steps = random_walk_distribution(gc, full_graph_cut, walk_length,n_trials, check_every_n, tolerance);
-        cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / gc.nodes.size() << endl;
+        cout << "steps to stationary convergence:" << n_steps << " steps per node: " << 1. * n_steps / static_cast<int>(gc.nodes.size()) << endl;
         cout << "if == " << walk_length << ", did not converge in time" << endl;
     } else {
         vector<set<Node>> partition;
@@ -3271,7 +3251,7 @@ test_expander(GraphContext& gc, const Configuration& conf, double  /*phi*/)
             assert_count_nodes += p.size();
 
         }
-        assert (assert_count_nodes == gc.nodes.size());
+        assert (assert_count_nodes == static_cast<int>(gc.nodes.size()));
     }
     
     }
@@ -3296,10 +3276,10 @@ main(int argc, char** argv) -> int
     GraphContext gc;
     initGraph(gc, config.input);
     //assert(connected(gc.g));
-    config.n_nodes_orig = gc.nodes.size();
+    config.n_nodes_orig = static_cast<int>(gc.nodes.size());
     config.e_edges_orig = gc.num_edges;
 
-    cout << "n: " << gc.nodes.size()
+    cout << "n: " << static_cast<int>(gc.nodes.size())
          << " e: " << gc.num_edges << endl;
     map<Node, Node> map_to_original_graph;
     for (NodeIt n(gc.g); n != INVALID; ++n) {
@@ -3351,12 +3331,10 @@ main(int argc, char** argv) -> int
     cout << "Done decomp" << endl;
     cout << "output:" << endl;
 
-
-
     vector<int> all_nodes;
 
-    int n_singletons = 0;
-    int all_nodes_count = 0;
+    unsigned long n_singletons = 0;
+    unsigned long all_nodes_count = 0;
     vector<vector<Node>> cuts_node_vector;
     for (const auto& m : cut_maps) {
         if (m.size() == 1) {
@@ -3470,7 +3448,7 @@ main(int argc, char** argv) -> int
     }
 
     cout << "graph;" << config.input.file_name << endl;
-    cout << "nodes;" << gc.nodes.size() << endl;
+    cout << "nodes;" << static_cast<int>(gc.nodes.size()) << endl;
     cout << "edges;" << gc.num_edges << endl;
     cout << "g_phi target;" << config.G_phi_target << endl;
     cout << "h_phi target;" << config.H_phi_target << endl;
@@ -3506,5 +3484,6 @@ main(int argc, char** argv) -> int
 
     return 0;
 }
-
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
